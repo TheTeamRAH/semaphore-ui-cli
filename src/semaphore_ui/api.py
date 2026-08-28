@@ -119,8 +119,10 @@ class SemaphoreClient:
             f"/api/project/{project_id}/tasks",
             {"template_id": template_id, "environment": json.dumps(variables, separators=(",", ":"))},
         )
-        if not isinstance(result, dict) or "id" not in result:
-            raise APIError("Semaphore task response did not contain an id")
+        if not isinstance(result, dict) or not isinstance(result.get("id"), int) or result["id"] <= 0:
+            raise APIError("Semaphore task response did not contain a positive integer id")
+        if not isinstance(result.get("status"), str):
+            raise APIError("Semaphore task response did not contain a string status")
         return result
 
     def get_task(self, project_id: int, task_id: int) -> dict[str, Any]:
@@ -131,6 +133,8 @@ class SemaphoreClient:
 
     def get_output(self, project_id: int, task_id: int) -> list[dict[str, Any]]:
         result = self._request("GET", f"/api/project/{project_id}/tasks/{task_id}/output")
-        if not isinstance(result, list) or not all(isinstance(item, dict) for item in result):
-            raise APIError("Semaphore task output response was not a list of objects")
+        if not isinstance(result, list) or not all(
+            isinstance(item, dict) and isinstance(item.get("output"), str) for item in result
+        ):
+            raise APIError("Semaphore task output response was not a list of objects with output")
         return result

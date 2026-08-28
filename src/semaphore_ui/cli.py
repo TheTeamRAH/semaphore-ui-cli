@@ -82,6 +82,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _wait(client: SemaphoreClient, project_id: int, task_id: int, interval: float, timeout: float) -> dict[str, Any]:
+    if interval < 0:
+        raise ValueError("poll interval cannot be negative")
+    if timeout < 0:
+        raise ValueError("timeout cannot be negative")
     deadline = time.monotonic() + timeout
     while True:
         task = client.get_task(project_id, task_id)
@@ -113,12 +117,13 @@ def main(argv: list[str] | None = None) -> int:
             if result["task"].get("status", "").lower() in {"failed", "error", "stopped", "canceled", "cancelled"}:
                 return 1
         elif args.command == "status":
-            task = client.find_project(args.project)
-            _print(client.get_task(task["id"], args.task), args.as_json)
+            project = client.find_project(args.project)
+            task = client.get_task(project["id"], args.task)
+            _print({"project": project, "task": task}, args.as_json)
         elif args.command == "wait":
             project = client.find_project(args.project)
             task = _wait(client, project["id"], args.task, args.poll_interval, args.timeout)
-            _print(task, args.as_json)
+            _print({"project": project, "task": task}, args.as_json)
             return 0 if task["status"].lower() == "success" else 1
         elif args.command == "output":
             project = client.find_project(args.project)

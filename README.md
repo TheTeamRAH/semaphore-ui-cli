@@ -64,7 +64,7 @@ semaphore-ui wait --project configuration_management --task 4
 semaphore-ui output --project configuration_management --task 4 --plain
 ```
 
-Use `--json` on commands that return structured data for CI and agent integrations. `run --wait` waits for a terminal state. Successful tasks exit `0`; task failures exit `1`; configuration, lookup, API, and timeout errors exit `2`.
+Use `--json` on commands that return structured data for CI and agent integrations. `projects` and `templates` return API resource arrays. `run`, `status`, and `wait` return an envelope with `project`, `template` (for `run`), `task`, and `variables` (for `run`); `task` contains the Semaphore task ID, status, timestamps, and environment. `output --json` returns output entries with `time`, `task_id`, and `output`. Successful tasks exit `0`; task failures exit `1`; configuration, lookup, API, and timeout errors exit `2`.
 
 ## Recent Features
 
