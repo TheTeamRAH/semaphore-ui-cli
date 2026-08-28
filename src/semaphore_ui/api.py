@@ -77,8 +77,9 @@ class SemaphoreClient:
                 raw = response.read()
         except HTTPError as exc:
             raise APIError(f"Semaphore API returned HTTP {exc.code} for {method} {path}") from exc
-        except URLError as exc:
-            raise APIError(f"Unable to reach Semaphore API: {exc.reason}") from exc
+        except (URLError, TimeoutError, OSError) as exc:
+            reason = getattr(exc, "reason", str(exc))
+            raise APIError(f"Unable to reach Semaphore API: {reason}") from exc
         try:
             return json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -86,8 +87,8 @@ class SemaphoreClient:
 
     def list_projects(self) -> list[dict[str, Any]]:
         result = self._request("GET", "/api/projects")
-        if not isinstance(result, list):
-            raise APIError("Semaphore projects response was not a list")
+        if not isinstance(result, list) or not all(isinstance(item, dict) for item in result):
+            raise APIError("Semaphore projects response was not a list of objects")
         return result
 
     def find_project(self, name: str) -> dict[str, Any]:
@@ -100,8 +101,8 @@ class SemaphoreClient:
 
     def list_templates(self, project_id: int) -> list[dict[str, Any]]:
         result = self._request("GET", f"/api/project/{project_id}/templates")
-        if not isinstance(result, list):
-            raise APIError("Semaphore templates response was not a list")
+        if not isinstance(result, list) or not all(isinstance(item, dict) for item in result):
+            raise APIError("Semaphore templates response was not a list of objects")
         return result
 
     def find_template(self, project_id: int, name: str) -> dict[str, Any]:
@@ -124,12 +125,12 @@ class SemaphoreClient:
 
     def get_task(self, project_id: int, task_id: int) -> dict[str, Any]:
         result = self._request("GET", f"/api/project/{project_id}/tasks/{task_id}")
-        if not isinstance(result, dict) or "status" not in result:
-            raise APIError("Semaphore task response did not contain a status")
+        if not isinstance(result, dict) or not isinstance(result.get("status"), str):
+            raise APIError("Semaphore task response did not contain a string status")
         return result
 
     def get_output(self, project_id: int, task_id: int) -> list[dict[str, Any]]:
         result = self._request("GET", f"/api/project/{project_id}/tasks/{task_id}/output")
-        if not isinstance(result, list):
-            raise APIError("Semaphore task output response was not a list")
+        if not isinstance(result, list) or not all(isinstance(item, dict) for item in result):
+            raise APIError("Semaphore task output response was not a list of objects")
         return result
