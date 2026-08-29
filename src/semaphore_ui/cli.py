@@ -22,6 +22,7 @@ Typical JSON output is an envelope containing ``project``, ``template``,
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import json
 import re
 import sys
@@ -181,7 +182,22 @@ def _handle_output(args: argparse.Namespace, client: SemaphoreClient) -> int:
     return 0
 
 
-def _filter_tasks(tasks: list[dict[str, Any]], status: str | None, template: str | None, variables: dict[str, str]) -> list[dict[str, Any]]:
+def _parse_timestamp(value: str) -> datetime:
+    """Parse an ISO-8601 timestamp for task-history filtering."""
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"invalid timestamp: {value!r}") from exc
+
+
+def _filter_tasks(
+    tasks: list[dict[str, Any]],
+    status: str | None,
+    template: str | None,
+    variables: dict[str, str],
+    since: str | None = None,
+    until: str | None = None,
+) -> list[dict[str, Any]]:
     """Filter normalized tasks by status, template, and environment values.
 
     Args:
@@ -189,12 +205,26 @@ def _filter_tasks(tasks: list[dict[str, Any]], status: str | None, template: str
         status: Optional case-insensitive task status.
         template: Optional exact template name.
         variables: Environment values that must all match.
+        since: Optional inclusive creation-time lower bound.
+        until: Optional inclusive creation-time upper bound.
 
     Returns:
         Tasks matching every supplied filter.
     """
+    since_time = _parse_timestamp(since) if since else None
+    until_time = _parse_timestamp(until) if until else None
+    if since_time and until_time and since_time > until_time:
+        raise ValueError("since timestamp cannot be after until timestamp")
     result = []
     for task in tasks:
+        if since_time or until_time:
+            if not isinstance(task.get("created"), str):
+                raise ValueError(f"task {task.get('id', '')} has no creation timestamp")
+            created = _parse_timestamp(task["created"])
+            if since_time and created < since_time:
+                continue
+            if until_time and created > until_time:
+                continue
         if status and task.get("status", "").lower() != status.lower():
             continue
         if template and task.get("template", {}).get("name") != template:
@@ -209,9 +239,14 @@ def _handle_tasks(args: argparse.Namespace, client: SemaphoreClient) -> int:
     """Handle bounded historical task discovery and filtering."""
     project = client.find_project(args.project)
     variables = _variables(args.var)
-    tasks = client.list_tasks(project["id"], args.limit)
-    tasks = _filter_tasks(tasks, args.status, args.template, variables)
-    _print({"project": project, "tasks": tasks, "pagination": {"limit": args.limit, "has_more": len(tasks) == args.limit}}, args.as_json)
+    fetched_tasks = client.list_tasks(project["id"], args.limit)
+    tasks = _filter_tasks(
+        fetched_tasks, args.status, args.template, variables, getattr(args, "since", None), getattr(args, "until", None)
+    )
+    _print(
+        {"project": project, "tasks": tasks, "pagination": {"limit": args.limit, "has_more": len(fetched_tasks) == args.limit}},
+        args.as_json,
+    )
     return 0
 
 
@@ -274,6 +309,8 @@ def build_parser() -> argparse.ArgumentParser:
     tasks.add_argument("--limit", type=int, default=20)
     tasks.add_argument("--status")
     tasks.add_argument("--template")
+    tasks.add_argument("--since", help="include tasks created at or after this ISO-8601 timestamp")
+    tasks.add_argument("--until", help="include tasks created at or before this ISO-8601 timestamp")
     tasks.add_argument("--var", action="append", default=[], metavar="NAME=VALUE")
     _add_json_argument(tasks)
     tasks.set_defaults(handler=_handle_tasks)

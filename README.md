@@ -55,6 +55,15 @@ semaphore-ui tasks --project configuration_management \
   --var target=hermes-001.iot.home \
   --var fact=firewall_interface \
   --json
+
+Filter by status, template, or creation time:
+
+```bash
+semaphore-ui tasks --project configuration_management \
+  --status success \
+  --template hello_world \
+  --since 2026-08-29T00:00:00Z \
+  --limit 20 --json
 ```
 
 Trigger a task by name:
