@@ -70,6 +70,7 @@ Use `--json` on commands that return structured data for CI and agent integratio
 
 | Date | Purpose | Spec | Author |
 | --- | --- | --- | --- |
+| 2026-08-29-11-37 | Automate CI versioning, tagging, and Python package releases | [Specification](docs/features/2026-08-29-11-37-release-automation.md) | whose-footprints-are-these |
 | 2026-08-28-19-59 | Trigger Semaphore tasks by project and template name | [Specification](docs/features/2026-08-28-19-59-trigger-task-by-name.md) | whose-footprints-are-these |
 
 See [all feature specifications](docs/features/README.md).
