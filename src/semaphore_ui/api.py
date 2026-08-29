@@ -50,6 +50,109 @@ class TaskTimeoutError(SemaphoreError):
 TERMINAL_STATES = {"success", "error", "failed", "stopped", "canceled", "cancelled"}
 
 
+def _require_list_of_objects(value: Any, resource: str) -> list[dict[str, Any]]:
+    """Validate and return a resource collection.
+
+    Args:
+        value: Decoded API response.
+        resource: Human-readable resource name for the error message.
+
+    Returns:
+        The response as a list of dictionaries.
+
+    Raises:
+        APIError: If the response is not a list of dictionaries.
+    """
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise APIError(f"Semaphore {resource} response was not a list of objects")
+    return value
+
+
+def _require_task_id(task: dict[str, Any]) -> int:
+    """Validate and return a positive task identifier.
+
+    Args:
+        task: Decoded task response.
+
+    Returns:
+        The task's positive integer ID.
+
+    Raises:
+        APIError: If the task ID is missing or invalid.
+    """
+    if not isinstance(task, dict):
+        raise APIError("Semaphore task response did not contain a positive integer id")
+    task_id = task.get("id")
+    if not isinstance(task_id, int) or task_id <= 0:
+        raise APIError("Semaphore task response did not contain a positive integer id")
+    return task_id
+
+
+def _require_task_status(task: dict[str, Any]) -> str:
+    """Validate and return a task status.
+
+    Args:
+        task: Decoded task response.
+
+    Returns:
+        The task status string.
+
+    Raises:
+        APIError: If the task status is missing or invalid.
+    """
+    if not isinstance(task, dict):
+        raise APIError("Semaphore task response did not contain a string status")
+    status = task.get("status")
+    if not isinstance(status, str):
+        raise APIError("Semaphore task response did not contain a string status")
+    return status
+
+
+def _decode_environment(task: dict[str, Any]) -> dict[str, Any]:
+    """Decode and validate a task's environment object.
+
+    Args:
+        task: Decoded task response containing an environment value.
+
+    Returns:
+        The environment as a dictionary.
+
+    Raises:
+        APIError: If the environment is invalid JSON or not an object.
+    """
+    environment = task.get("environment", {})
+    if isinstance(environment, str):
+        try:
+            environment = json.loads(environment)
+        except json.JSONDecodeError as exc:
+            raise APIError(f"Semaphore task {task['id']} environment was invalid JSON") from exc
+    if not isinstance(environment, dict):
+        raise APIError(f"Semaphore task {task['id']} environment was not an object")
+    return environment
+
+
+def _normalize_task(item: dict[str, Any]) -> dict[str, Any]:
+    """Validate and normalize one task-list response item.
+
+    Args:
+        item: Raw task dictionary returned by Semaphore.
+
+    Returns:
+        A stable task dictionary for callers.
+
+    Raises:
+        APIError: If required task fields or the environment are invalid.
+    """
+    _require_task_id(item)
+    _require_task_status(item)
+    task = {key: item[key] for key in ("id", "status", "created", "start", "end") if key in item}
+    task["template"] = {"id": item["template_id"]} if isinstance(item.get("template_id"), int) else {}
+    if isinstance(item.get("tpl_alias"), str):
+        task["template"]["name"] = item["tpl_alias"]
+    task["environment"] = _decode_environment(item)
+    return task
+
+
 class SemaphoreClient:
     """Small HTTP client for the Semaphore UI project/task API.
 
@@ -165,10 +268,7 @@ class SemaphoreClient:
         Returns:
             A list of project dictionaries.
         """
-        result = self._request("GET", "/api/projects")
-        if not isinstance(result, list) or not all(isinstance(item, dict) for item in result):
-            raise APIError("Semaphore projects response was not a list of objects")
-        return result
+        return _require_list_of_objects(self._request("GET", "/api/projects"), "projects")
 
     def find_project(self, name: str) -> dict[str, Any]:
         """Resolve a project by exact name.
@@ -190,10 +290,9 @@ class SemaphoreClient:
         Returns:
             A list of task-template dictionaries.
         """
-        result = self._request("GET", f"/api/project/{project_id}/templates")
-        if not isinstance(result, list) or not all(isinstance(item, dict) for item in result):
-            raise APIError("Semaphore templates response was not a list of objects")
-        return result
+        return _require_list_of_objects(
+            self._request("GET", f"/api/project/{project_id}/templates"), "templates"
+        )
 
     def find_template(self, project_id: int, name: str) -> dict[str, Any]:
         """Resolve a task template by exact name within a project.
@@ -226,10 +325,8 @@ class SemaphoreClient:
             f"/api/project/{project_id}/tasks",
             {"template_id": template_id, "environment": json.dumps(variables, separators=(",", ":"))},
         )
-        if not isinstance(result, dict) or not isinstance(result.get("id"), int) or result["id"] <= 0:
-            raise APIError("Semaphore task response did not contain a positive integer id")
-        if not isinstance(result.get("status"), str):
-            raise APIError("Semaphore task response did not contain a string status")
+        _require_task_id(result)
+        _require_task_status(result)
         return result
 
     def list_tasks(self, project_id: int, limit: int = 20) -> list[dict[str, Any]]:
@@ -248,31 +345,10 @@ class SemaphoreClient:
         """
         if limit <= 0:
             raise ValueError("task limit must be positive")
-        result = self._request("GET", f"/api/project/{project_id}/tasks")
-        if not isinstance(result, list) or not all(isinstance(item, dict) for item in result):
-            raise APIError("Semaphore tasks response was not a list of objects")
-
-        tasks = []
-        for item in result[:limit]:
-            if not isinstance(item.get("id"), int) or item["id"] <= 0:
-                raise APIError("Semaphore task response did not contain a positive integer id")
-            if not isinstance(item.get("status"), str):
-                raise APIError("Semaphore task response did not contain a string status")
-            environment = item.get("environment", {})
-            if isinstance(environment, str):
-                try:
-                    environment = json.loads(environment)
-                except json.JSONDecodeError as exc:
-                    raise APIError(f"Semaphore task {item['id']} environment was invalid JSON") from exc
-            if not isinstance(environment, dict):
-                raise APIError(f"Semaphore task {item['id']} environment was not an object")
-            task = {key: item[key] for key in ("id", "status", "created", "start", "end") if key in item}
-            task["template"] = {"id": item["template_id"]} if isinstance(item.get("template_id"), int) else {}
-            if isinstance(item.get("tpl_alias"), str):
-                task["template"]["name"] = item["tpl_alias"]
-            task["environment"] = environment
-            tasks.append(task)
-        return tasks
+        result = _require_list_of_objects(
+            self._request("GET", f"/api/project/{project_id}/tasks"), "tasks"
+        )
+        return [_normalize_task(item) for item in result[:limit]]
 
     def get_task(self, project_id: int, task_id: int) -> dict[str, Any]:
         """Retrieve one task by numeric ID.
@@ -285,8 +361,9 @@ class SemaphoreClient:
             The task dictionary, including its status.
         """
         result = self._request("GET", f"/api/project/{project_id}/tasks/{task_id}")
-        if not isinstance(result, dict) or not isinstance(result.get("status"), str):
-            raise APIError("Semaphore task response did not contain a string status")
+        if not isinstance(result, dict):
+            raise APIError("Semaphore task response was not an object")
+        _require_task_status(result)
         return result
 
     def get_output(self, project_id: int, task_id: int) -> list[dict[str, Any]]:

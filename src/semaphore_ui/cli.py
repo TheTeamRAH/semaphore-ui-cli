@@ -185,7 +185,15 @@ def _handle_output(args: argparse.Namespace, client: SemaphoreClient) -> int:
 
 @dataclass(frozen=True)
 class TaskFilters:
-    """User-selected predicates for historical task discovery."""
+    """User-selected predicates for historical task discovery.
+
+    Attributes:
+        status: Optional case-insensitive task status.
+        template: Optional exact template name.
+        variables: Environment values that must all match.
+        since: Optional inclusive creation-time lower bound.
+        until: Optional inclusive creation-time upper bound.
+    """
 
     status: str | None = None
     template: str | None = None
@@ -195,7 +203,17 @@ class TaskFilters:
 
 
 def _parse_timestamp(value: str) -> datetime:
-    """Parse an ISO-8601 timestamp for task-history filtering."""
+    """Parse an ISO-8601 timestamp for task-history filtering.
+
+    Args:
+        value: ISO-8601 timestamp including a timezone.
+
+    Returns:
+        A timezone-aware datetime.
+
+    Raises:
+        ValueError: If the timestamp is invalid or has no timezone.
+    """
     try:
         timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
@@ -206,7 +224,19 @@ def _parse_timestamp(value: str) -> datetime:
 
 
 def _matches_time_range(task: dict[str, Any], since: datetime | None, until: datetime | None) -> bool:
-    """Return whether a task creation time falls within inclusive bounds."""
+    """Return whether a task creation time falls within inclusive bounds.
+
+    Args:
+        task: Normalized task dictionary.
+        since: Optional inclusive lower bound.
+        until: Optional inclusive upper bound.
+
+    Returns:
+        True when the task is within the supplied bounds.
+
+    Raises:
+        ValueError: If a bounded task has no valid creation timestamp.
+    """
     if since is None and until is None:
         return True
     if not isinstance(task.get("created"), str):
@@ -216,7 +246,18 @@ def _matches_time_range(task: dict[str, Any], since: datetime | None, until: dat
 
 
 def _matches_task(task: dict[str, Any], filters: TaskFilters) -> bool:
-    """Return whether a normalized task matches every selected filter."""
+    """Return whether a normalized task matches every selected filter.
+
+    Args:
+        task: Normalized task dictionary.
+        filters: User-selected task predicates.
+
+    Returns:
+        True when status, template, variables, and time bounds all match.
+
+    Raises:
+        ValueError: If the filter timestamps are invalid or reversed.
+    """
     wanted_status = filters.status.lower() if filters.status else None
     since = _parse_timestamp(filters.since) if filters.since else None
     until = _parse_timestamp(filters.until) if filters.until else None
@@ -234,12 +275,32 @@ def _matches_task(task: dict[str, Any], filters: TaskFilters) -> bool:
 
 
 def _filter_tasks(tasks: list[dict[str, Any]], filters: TaskFilters) -> list[dict[str, Any]]:
-    """Return normalized tasks matching all selected filters."""
+    """Return normalized tasks matching all selected filters.
+
+    Args:
+        tasks: Normalized task dictionaries.
+        filters: User-selected task predicates.
+
+    Returns:
+        The subset of tasks matching every selected predicate.
+    """
     return [task for task in tasks if _matches_task(task, filters)]
 
 
 def _handle_tasks(args: argparse.Namespace, client: SemaphoreClient) -> int:
-    """Handle bounded historical task discovery and filtering."""
+    """Handle bounded historical task discovery and filtering.
+
+    Args:
+        args: Parsed arguments for the ``tasks`` command.
+        client: Configured Semaphore client.
+
+    Returns:
+        Zero after printing the matching task results.
+
+    Raises:
+        SemaphoreError: If project or task retrieval fails.
+        ValueError: If a variable or filter value is invalid.
+    """
     project = client.find_project(args.project)
     filters = TaskFilters(
         status=args.status,
