@@ -47,6 +47,25 @@ semaphore-ui projects
 semaphore-ui templates --project configuration_management
 ```
 
+Discover historical tasks:
+
+```bash
+semaphore-ui tasks --project configuration_management --limit 20
+semaphore-ui tasks --project configuration_management \
+  --var target=hermes-001.iot.home \
+  --var fact=firewall_interface \
+  --json
+
+Filter by status, template, or creation time:
+
+```bash
+semaphore-ui tasks --project configuration_management \
+  --status success \
+  --template hello_world \
+  --since 2026-08-29T00:00:00Z \
+  --limit 20 --json
+```
+
 Trigger a task by name:
 
 ```bash
@@ -70,6 +89,7 @@ Use `--json` on commands that return structured data for CI and agent integratio
 
 | Date | Purpose | Spec | Author |
 | --- | --- | --- | --- |
+| 2026-08-29-11-28 | Discover and filter Semaphore task history | [Specification](docs/features/2026-08-29-11-28-task-discovery.md) | whose-footprints-are-these |
 | 2026-08-28-19-59 | Trigger Semaphore tasks by project and template name | [Specification](docs/features/2026-08-28-19-59-trigger-task-by-name.md) | whose-footprints-are-these |
 
 See [all feature specifications](docs/features/README.md).

@@ -22,6 +22,8 @@ Typical JSON output is an envelope containing ``project``, ``template``,
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
+from datetime import datetime
 import json
 import re
 import sys
@@ -181,6 +183,141 @@ def _handle_output(args: argparse.Namespace, client: SemaphoreClient) -> int:
     return 0
 
 
+@dataclass(frozen=True)
+class TaskFilters:
+    """User-selected predicates for historical task discovery.
+
+    Attributes:
+        status: Optional case-insensitive task status.
+        template: Optional exact template name.
+        variables: Environment values that must all match.
+        since: Optional inclusive creation-time lower bound.
+        until: Optional inclusive creation-time upper bound.
+    """
+
+    status: str | None = None
+    template: str | None = None
+    variables: dict[str, str] | None = None
+    since: str | None = None
+    until: str | None = None
+
+
+def _parse_timestamp(value: str) -> datetime:
+    """Parse an ISO-8601 timestamp for task-history filtering.
+
+    Args:
+        value: ISO-8601 timestamp including a timezone.
+
+    Returns:
+        A timezone-aware datetime.
+
+    Raises:
+        ValueError: If the timestamp is invalid or has no timezone.
+    """
+    try:
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"invalid timestamp: {value!r}") from exc
+    if timestamp.tzinfo is None:
+        raise ValueError(f"timestamp must include a timezone: {value!r}")
+    return timestamp
+
+
+def _matches_time_range(task: dict[str, Any], since: datetime | None, until: datetime | None) -> bool:
+    """Return whether a task creation time falls within inclusive bounds.
+
+    Args:
+        task: Normalized task dictionary.
+        since: Optional inclusive lower bound.
+        until: Optional inclusive upper bound.
+
+    Returns:
+        True when the task is within the supplied bounds.
+
+    Raises:
+        ValueError: If a bounded task has no valid creation timestamp.
+    """
+    if since is None and until is None:
+        return True
+    if not isinstance(task.get("created"), str):
+        raise ValueError(f"task {task.get('id', '')} has no creation timestamp")
+    created = _parse_timestamp(task["created"])
+    return (since is None or created >= since) and (until is None or created <= until)
+
+
+def _matches_task(task: dict[str, Any], filters: TaskFilters) -> bool:
+    """Return whether a normalized task matches every selected filter.
+
+    Args:
+        task: Normalized task dictionary.
+        filters: User-selected task predicates.
+
+    Returns:
+        True when status, template, variables, and time bounds all match.
+
+    Raises:
+        ValueError: If the filter timestamps are invalid or reversed.
+    """
+    wanted_status = filters.status.lower() if filters.status else None
+    since = _parse_timestamp(filters.since) if filters.since else None
+    until = _parse_timestamp(filters.until) if filters.until else None
+    if since and until and since > until:
+        raise ValueError("since timestamp cannot be after until timestamp")
+    return all(
+        (
+            wanted_status is None or task.get("status", "").lower() == wanted_status,
+            filters.template is None or task.get("template", {}).get("name") == filters.template,
+            not filters.variables
+            or all(task.get("environment", {}).get(name) == value for name, value in filters.variables.items()),
+            _matches_time_range(task, since, until),
+        )
+    )
+
+
+def _filter_tasks(tasks: list[dict[str, Any]], filters: TaskFilters) -> list[dict[str, Any]]:
+    """Return normalized tasks matching all selected filters.
+
+    Args:
+        tasks: Normalized task dictionaries.
+        filters: User-selected task predicates.
+
+    Returns:
+        The subset of tasks matching every selected predicate.
+    """
+    return [task for task in tasks if _matches_task(task, filters)]
+
+
+def _handle_tasks(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Handle bounded historical task discovery and filtering.
+
+    Args:
+        args: Parsed arguments for the ``tasks`` command.
+        client: Configured Semaphore client.
+
+    Returns:
+        Zero after printing the matching task results.
+
+    Raises:
+        SemaphoreError: If project or task retrieval fails.
+        ValueError: If a variable or filter value is invalid.
+    """
+    project = client.find_project(args.project)
+    filters = TaskFilters(
+        status=args.status,
+        template=args.template,
+        variables=_variables(args.var),
+        since=getattr(args, "since", None),
+        until=getattr(args, "until", None),
+    )
+    fetched_tasks = client.list_tasks(project["id"], args.limit)
+    tasks = _filter_tasks(fetched_tasks, filters)
+    _print(
+        {"project": project, "tasks": tasks, "pagination": {"limit": args.limit, "has_more": len(fetched_tasks) == args.limit}},
+        args.as_json,
+    )
+    return 0
+
+
 def _handle_wait(args: argparse.Namespace, client: SemaphoreClient) -> int:
     """Handle the ``wait`` command and return task-based exit status."""
     project = client.find_project(args.project)
@@ -234,6 +371,17 @@ def build_parser() -> argparse.ArgumentParser:
     output.add_argument("--plain", action="store_true")
     _add_json_argument(output)
     output.set_defaults(handler=_handle_output)
+
+    tasks = sub.add_parser("tasks", help="list historical tasks in a project")
+    tasks.add_argument("--project", required=True)
+    tasks.add_argument("--limit", type=int, default=20)
+    tasks.add_argument("--status")
+    tasks.add_argument("--template")
+    tasks.add_argument("--since", help="include tasks created at or after this ISO-8601 timestamp")
+    tasks.add_argument("--until", help="include tasks created at or before this ISO-8601 timestamp")
+    tasks.add_argument("--var", action="append", default=[], metavar="NAME=VALUE")
+    _add_json_argument(tasks)
+    tasks.set_defaults(handler=_handle_tasks)
 
     wait = sub.add_parser("wait", help="wait for a task to reach a terminal state")
     wait.add_argument("--project", required=True)

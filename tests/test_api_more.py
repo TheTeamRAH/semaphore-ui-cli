@@ -49,3 +49,27 @@ def test_variables_require_name_and_value():
 
 def test_plain_output_removes_ansi_escape_sequences():
     assert _plain("\033[0;32mok\033[0m: host") == "ok: host"
+
+
+def test_list_tasks_parses_environment_and_applies_limit():
+    client = SemaphoreClient(
+        "https://semaphore.example",
+        "secret",
+        responses={
+            ("GET", "/api/project/1/tasks"): [
+                {"id": 4, "status": "success", "tpl_alias": "hello_world", "environment": '{"target":"host-a","fact":"fact_a"}'},
+                {"id": 3, "status": "error", "tpl_alias": "hello_world", "environment": '{"target":"host-b","fact":"fact_b"}'},
+            ]
+        },
+    )
+
+    tasks = client.list_tasks(1, limit=1)
+
+    assert tasks == [
+        {
+            "id": 4,
+            "status": "success",
+            "template": {"name": "hello_world"},
+            "environment": {"target": "host-a", "fact": "fact_a"},
+        }
+    ]
