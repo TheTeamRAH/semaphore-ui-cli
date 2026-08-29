@@ -112,6 +112,8 @@ The final schema must reflect the actual deployed API and clearly document omitt
 - [ ] Existing tests and commands remain passing.
 - [ ] No test requires network access, real credentials, or a live Semaphore server.
 - [ ] Documentation accurately describes the supported API behavior and limits.
+- [ ] A live end-to-end test against the deployed Semaphore instance lists or filters the required task history using only `semaphore-ui` after installation from the feature branch.
+- [ ] The PR contains redacted evidence of that end-to-end test, including the install, discovery/filter, and follow-up task retrieval commands and captured results; real hostnames/targets, tokens, and other sensitive values are replaced with safe placeholders.
 - [ ] `uv run pytest`, `uv build`, and `git diff --check` pass.
 
 ## Implementation notes
