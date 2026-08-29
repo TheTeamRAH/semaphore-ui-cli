@@ -73,6 +73,15 @@ class SemaphoreClient:
         opener: Callable[..., Any] | None = None,
         responses: dict[tuple[str, str], Any] | None = None,
     ) -> None:
+        """Initialise a client from explicit or environment configuration.
+
+        Args:
+            host: Semaphore base URL, or ``SEMAPHORE_HOST`` when omitted.
+            token: Bearer token, or ``SEMAPHORE_TOKEN`` when omitted.
+            insecure: Whether to disable TLS certificate verification.
+            opener: Optional urllib-compatible opener for tests.
+            responses: Optional fake response map for tests.
+        """
         self.host = (host or os.getenv("SEMAPHORE_HOST", "")).rstrip("/")
         self.token = token or os.getenv("SEMAPHORE_TOKEN", "")
         self.insecure = insecure
