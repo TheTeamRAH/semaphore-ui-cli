@@ -22,6 +22,7 @@ Typical JSON output is an envelope containing ``project``, ``template``,
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from datetime import datetime
 import json
 import re
@@ -182,67 +183,73 @@ def _handle_output(args: argparse.Namespace, client: SemaphoreClient) -> int:
     return 0
 
 
+@dataclass(frozen=True)
+class TaskFilters:
+    """User-selected predicates for historical task discovery."""
+
+    status: str | None = None
+    template: str | None = None
+    variables: dict[str, str] | None = None
+    since: str | None = None
+    until: str | None = None
+
+
 def _parse_timestamp(value: str) -> datetime:
     """Parse an ISO-8601 timestamp for task-history filtering."""
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise ValueError(f"invalid timestamp: {value!r}") from exc
+    if timestamp.tzinfo is None:
+        raise ValueError(f"timestamp must include a timezone: {value!r}")
+    return timestamp
 
 
-def _filter_tasks(
-    tasks: list[dict[str, Any]],
-    status: str | None,
-    template: str | None,
-    variables: dict[str, str],
-    since: str | None = None,
-    until: str | None = None,
-) -> list[dict[str, Any]]:
-    """Filter normalized tasks by status, template, and environment values.
+def _matches_time_range(task: dict[str, Any], since: datetime | None, until: datetime | None) -> bool:
+    """Return whether a task creation time falls within inclusive bounds."""
+    if since is None and until is None:
+        return True
+    if not isinstance(task.get("created"), str):
+        raise ValueError(f"task {task.get('id', '')} has no creation timestamp")
+    created = _parse_timestamp(task["created"])
+    return (since is None or created >= since) and (until is None or created <= until)
 
-    Args:
-        tasks: Normalized task dictionaries.
-        status: Optional case-insensitive task status.
-        template: Optional exact template name.
-        variables: Environment values that must all match.
-        since: Optional inclusive creation-time lower bound.
-        until: Optional inclusive creation-time upper bound.
 
-    Returns:
-        Tasks matching every supplied filter.
-    """
-    since_time = _parse_timestamp(since) if since else None
-    until_time = _parse_timestamp(until) if until else None
-    if since_time and until_time and since_time > until_time:
+def _matches_task(task: dict[str, Any], filters: TaskFilters) -> bool:
+    """Return whether a normalized task matches every selected filter."""
+    wanted_status = filters.status.lower() if filters.status else None
+    since = _parse_timestamp(filters.since) if filters.since else None
+    until = _parse_timestamp(filters.until) if filters.until else None
+    if since and until and since > until:
         raise ValueError("since timestamp cannot be after until timestamp")
-    result = []
-    for task in tasks:
-        if since_time or until_time:
-            if not isinstance(task.get("created"), str):
-                raise ValueError(f"task {task.get('id', '')} has no creation timestamp")
-            created = _parse_timestamp(task["created"])
-            if since_time and created < since_time:
-                continue
-            if until_time and created > until_time:
-                continue
-        if status and task.get("status", "").lower() != status.lower():
-            continue
-        if template and task.get("template", {}).get("name") != template:
-            continue
-        if any(task.get("environment", {}).get(name) != value for name, value in variables.items()):
-            continue
-        result.append(task)
-    return result
+    return all(
+        (
+            wanted_status is None or task.get("status", "").lower() == wanted_status,
+            filters.template is None or task.get("template", {}).get("name") == filters.template,
+            not filters.variables
+            or all(task.get("environment", {}).get(name) == value for name, value in filters.variables.items()),
+            _matches_time_range(task, since, until),
+        )
+    )
+
+
+def _filter_tasks(tasks: list[dict[str, Any]], filters: TaskFilters) -> list[dict[str, Any]]:
+    """Return normalized tasks matching all selected filters."""
+    return [task for task in tasks if _matches_task(task, filters)]
 
 
 def _handle_tasks(args: argparse.Namespace, client: SemaphoreClient) -> int:
     """Handle bounded historical task discovery and filtering."""
     project = client.find_project(args.project)
-    variables = _variables(args.var)
-    fetched_tasks = client.list_tasks(project["id"], args.limit)
-    tasks = _filter_tasks(
-        fetched_tasks, args.status, args.template, variables, getattr(args, "since", None), getattr(args, "until", None)
+    filters = TaskFilters(
+        status=args.status,
+        template=args.template,
+        variables=_variables(args.var),
+        since=getattr(args, "since", None),
+        until=getattr(args, "until", None),
     )
+    fetched_tasks = client.list_tasks(project["id"], args.limit)
+    tasks = _filter_tasks(fetched_tasks, filters)
     _print(
         {"project": project, "tasks": tasks, "pagination": {"limit": args.limit, "has_more": len(fetched_tasks) == args.limit}},
         args.as_json,
