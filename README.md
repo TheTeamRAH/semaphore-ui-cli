@@ -47,6 +47,16 @@ semaphore-ui projects
 semaphore-ui templates --project configuration_management
 ```
 
+Discover historical tasks:
+
+```bash
+semaphore-ui tasks --project configuration_management --limit 20
+semaphore-ui tasks --project configuration_management \
+  --var target=hermes-001.iot.home \
+  --var fact=firewall_interface \
+  --json
+```
+
 Trigger a task by name:
 
 ```bash

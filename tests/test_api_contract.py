@@ -45,3 +45,21 @@ def test_wait_rejects_negative_interval():
 def test_wait_rejects_negative_timeout():
     with pytest.raises(ValueError, match="timeout"):
         _wait(object(), 1, 4, interval=1, timeout=-1)
+
+
+def test_list_tasks_rejects_non_positive_limit():
+    client = SemaphoreClient("https://semaphore.example", "secret", responses={})
+
+    with pytest.raises(ValueError, match="task limit"):
+        client.list_tasks(1, limit=0)
+
+
+def test_list_tasks_rejects_malformed_environment():
+    client = SemaphoreClient(
+        "https://semaphore.example",
+        "secret",
+        responses={("GET", "/api/project/1/tasks"): [{"id": 4, "status": "success", "environment": "not-json"}]},
+    )
+
+    with pytest.raises(APIError, match="environment was invalid JSON"):
+        client.list_tasks(1)

@@ -232,6 +232,48 @@ class SemaphoreClient:
             raise APIError("Semaphore task response did not contain a string status")
         return result
 
+    def list_tasks(self, project_id: int, limit: int = 20) -> list[dict[str, Any]]:
+        """Return a bounded list of normalized tasks for a project.
+
+        Args:
+            project_id: Numeric Semaphore project ID.
+            limit: Maximum number of tasks to return.
+
+        Returns:
+            Task dictionaries with parsed environment and template identity.
+
+        Raises:
+            ValueError: If limit is not positive.
+            APIError: If the response or a task environment is malformed.
+        """
+        if limit <= 0:
+            raise ValueError("task limit must be positive")
+        result = self._request("GET", f"/api/project/{project_id}/tasks")
+        if not isinstance(result, list) or not all(isinstance(item, dict) for item in result):
+            raise APIError("Semaphore tasks response was not a list of objects")
+
+        tasks = []
+        for item in result[:limit]:
+            if not isinstance(item.get("id"), int) or item["id"] <= 0:
+                raise APIError("Semaphore task response did not contain a positive integer id")
+            if not isinstance(item.get("status"), str):
+                raise APIError("Semaphore task response did not contain a string status")
+            environment = item.get("environment", {})
+            if isinstance(environment, str):
+                try:
+                    environment = json.loads(environment)
+                except json.JSONDecodeError as exc:
+                    raise APIError(f"Semaphore task {item['id']} environment was invalid JSON") from exc
+            if not isinstance(environment, dict):
+                raise APIError(f"Semaphore task {item['id']} environment was not an object")
+            task = {key: item[key] for key in ("id", "status", "created", "start", "end") if key in item}
+            task["template"] = {"id": item["template_id"]} if isinstance(item.get("template_id"), int) else {}
+            if isinstance(item.get("tpl_alias"), str):
+                task["template"]["name"] = item["tpl_alias"]
+            task["environment"] = environment
+            tasks.append(task)
+        return tasks
+
     def get_task(self, project_id: int, task_id: int) -> dict[str, Any]:
         """Retrieve one task by numeric ID.
 

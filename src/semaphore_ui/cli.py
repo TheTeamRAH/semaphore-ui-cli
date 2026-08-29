@@ -181,6 +181,40 @@ def _handle_output(args: argparse.Namespace, client: SemaphoreClient) -> int:
     return 0
 
 
+def _filter_tasks(tasks: list[dict[str, Any]], status: str | None, template: str | None, variables: dict[str, str]) -> list[dict[str, Any]]:
+    """Filter normalized tasks by status, template, and environment values.
+
+    Args:
+        tasks: Normalized task dictionaries.
+        status: Optional case-insensitive task status.
+        template: Optional exact template name.
+        variables: Environment values that must all match.
+
+    Returns:
+        Tasks matching every supplied filter.
+    """
+    result = []
+    for task in tasks:
+        if status and task.get("status", "").lower() != status.lower():
+            continue
+        if template and task.get("template", {}).get("name") != template:
+            continue
+        if any(task.get("environment", {}).get(name) != value for name, value in variables.items()):
+            continue
+        result.append(task)
+    return result
+
+
+def _handle_tasks(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Handle bounded historical task discovery and filtering."""
+    project = client.find_project(args.project)
+    variables = _variables(args.var)
+    tasks = client.list_tasks(project["id"], args.limit)
+    tasks = _filter_tasks(tasks, args.status, args.template, variables)
+    _print({"project": project, "tasks": tasks, "pagination": {"limit": args.limit, "has_more": len(tasks) == args.limit}}, args.as_json)
+    return 0
+
+
 def _handle_wait(args: argparse.Namespace, client: SemaphoreClient) -> int:
     """Handle the ``wait`` command and return task-based exit status."""
     project = client.find_project(args.project)
@@ -234,6 +268,15 @@ def build_parser() -> argparse.ArgumentParser:
     output.add_argument("--plain", action="store_true")
     _add_json_argument(output)
     output.set_defaults(handler=_handle_output)
+
+    tasks = sub.add_parser("tasks", help="list historical tasks in a project")
+    tasks.add_argument("--project", required=True)
+    tasks.add_argument("--limit", type=int, default=20)
+    tasks.add_argument("--status")
+    tasks.add_argument("--template")
+    tasks.add_argument("--var", action="append", default=[], metavar="NAME=VALUE")
+    _add_json_argument(tasks)
+    tasks.set_defaults(handler=_handle_tasks)
 
     wait = sub.add_parser("wait", help="wait for a task to reach a terminal state")
     wait.add_argument("--project", required=True)
