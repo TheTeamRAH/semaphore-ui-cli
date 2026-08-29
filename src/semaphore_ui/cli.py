@@ -103,62 +103,6 @@ def _add_json_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true", dest="as_json")
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build the command-line argument parser and dispatch table.
-
-    Returns:
-        An argparse parser whose subcommands carry their handler functions.
-    """
-    parser = argparse.ArgumentParser(prog="semaphore-ui", description="Run and inspect Semaphore UI tasks")
-    parser.add_argument(
-        "--insecure",
-        action="store_true",
-        help="disable TLS certificate verification (explicitly opt in; use only for trusted internal endpoints)",
-    )
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    projects = sub.add_parser("projects", help="list projects")
-    _add_json_argument(projects)
-    projects.set_defaults(handler=_handle_projects)
-
-    templates = sub.add_parser("templates", help="list templates in a project")
-    templates.add_argument("--project", required=True)
-    _add_json_argument(templates)
-    templates.set_defaults(handler=_handle_templates)
-
-    run = sub.add_parser("run", help="trigger a task template by project and template name")
-    run.add_argument("--project", required=True)
-    run.add_argument("--template", required=True)
-    run.add_argument("--var", action="append", default=[], metavar="NAME=VALUE")
-    run.add_argument("--wait", action="store_true")
-    run.add_argument("--poll-interval", type=float, default=2.0)
-    run.add_argument("--timeout", type=float, default=300.0)
-    _add_json_argument(run)
-    run.set_defaults(handler=_handle_run)
-
-    status = sub.add_parser("status", help="retrieve task status")
-    status.add_argument("--project", required=True)
-    status.add_argument("--task", required=True, type=int)
-    _add_json_argument(status)
-    status.set_defaults(handler=_handle_status)
-
-    output = sub.add_parser("output", help="retrieve task output")
-    output.add_argument("--project", required=True)
-    output.add_argument("--task", required=True, type=int)
-    output.add_argument("--plain", action="store_true")
-    _add_json_argument(output)
-    output.set_defaults(handler=_handle_output)
-
-    wait = sub.add_parser("wait", help="wait for a task to reach a terminal state")
-    wait.add_argument("--project", required=True)
-    wait.add_argument("--task", required=True, type=int)
-    wait.add_argument("--poll-interval", type=float, default=2.0)
-    wait.add_argument("--timeout", type=float, default=300.0)
-    _add_json_argument(wait)
-    wait.set_defaults(handler=_handle_wait)
-    return parser
-
-
 def _wait(client: SemaphoreClient, project_id: int, task_id: int, interval: float, timeout: float) -> dict[str, Any]:
     """Poll a task until it reaches a terminal state or times out.
 
@@ -243,6 +187,62 @@ def _handle_wait(args: argparse.Namespace, client: SemaphoreClient) -> int:
     task = _wait(client, project["id"], args.task, args.poll_interval, args.timeout)
     _print({"project": project, "task": task}, args.as_json)
     return 0 if task["status"].lower() == "success" else 1
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line argument parser and dispatch table.
+
+    Returns:
+        An argparse parser whose subcommands carry their handler functions.
+    """
+    parser = argparse.ArgumentParser(prog="semaphore-ui", description="Run and inspect Semaphore UI tasks")
+    parser.add_argument(
+        "--insecure",
+        action="store_true",
+        help="disable TLS certificate verification (explicitly opt in; use only for trusted internal endpoints)",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    projects = sub.add_parser("projects", help="list projects")
+    _add_json_argument(projects)
+    projects.set_defaults(handler=_handle_projects)
+
+    templates = sub.add_parser("templates", help="list templates in a project")
+    templates.add_argument("--project", required=True)
+    _add_json_argument(templates)
+    templates.set_defaults(handler=_handle_templates)
+
+    run = sub.add_parser("run", help="trigger a task template by project and template name")
+    run.add_argument("--project", required=True)
+    run.add_argument("--template", required=True)
+    run.add_argument("--var", action="append", default=[], metavar="NAME=VALUE")
+    run.add_argument("--wait", action="store_true")
+    run.add_argument("--poll-interval", type=float, default=2.0)
+    run.add_argument("--timeout", type=float, default=300.0)
+    _add_json_argument(run)
+    run.set_defaults(handler=_handle_run)
+
+    status = sub.add_parser("status", help="retrieve task status")
+    status.add_argument("--project", required=True)
+    status.add_argument("--task", required=True, type=int)
+    _add_json_argument(status)
+    status.set_defaults(handler=_handle_status)
+
+    output = sub.add_parser("output", help="retrieve task output")
+    output.add_argument("--project", required=True)
+    output.add_argument("--task", required=True, type=int)
+    output.add_argument("--plain", action="store_true")
+    _add_json_argument(output)
+    output.set_defaults(handler=_handle_output)
+
+    wait = sub.add_parser("wait", help="wait for a task to reach a terminal state")
+    wait.add_argument("--project", required=True)
+    wait.add_argument("--task", required=True, type=int)
+    wait.add_argument("--poll-interval", type=float, default=2.0)
+    wait.add_argument("--timeout", type=float, default=300.0)
+    _add_json_argument(wait)
+    wait.set_defaults(handler=_handle_wait)
+    return parser
 
 
 def main(argv: list[str] | None = None) -> int:
