@@ -135,3 +135,19 @@ def test_template_create_schema_preflight_requires_supported_path_and_payload_fi
     schema["definitions"]["TemplateRequest"]["properties"].pop("git_branch")
     with pytest.raises(APIError, match="git_branch"):
         client.assert_template_create_supported(payload)
+
+
+def test_template_create_schema_preflight_rejects_malformed_definitions():
+    client = SemaphoreClient(
+        "https://semaphore.example",
+        "secret",
+        responses={
+            ("GET", "/api/swagger"): {
+                "paths": {"/project/{project_id}/templates": {"post": {}}},
+                "definitions": [],
+            }
+        },
+    )
+
+    with pytest.raises(APIError, match="definitions"):
+        client.assert_template_create_supported({"name": "template"})

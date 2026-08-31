@@ -149,7 +149,10 @@ def _schema_properties(document: dict[str, Any], schema: Any) -> dict[str, Any]:
         return {}
     reference = schema.get("$ref")
     if isinstance(reference, str) and reference.startswith("#/definitions/"):
-        definition = document.get("definitions", {}).get(reference.rsplit("/", 1)[-1])
+        definitions = document.get("definitions")
+        if not isinstance(definitions, dict):
+            raise APIError("Semaphore API schema definitions were not an object")
+        definition = definitions.get(reference.rsplit("/", 1)[-1])
         if not isinstance(definition, dict):
             raise APIError(f"Semaphore API schema has an invalid reference: {reference}")
         return _schema_properties(document, definition)
@@ -458,7 +461,10 @@ class SemaphoreClient:
         path = "/project/{project_id}/templates"
         if not isinstance(paths, dict) or not isinstance(paths.get(path), dict) or "post" not in paths[path]:
             raise APIError("Semaphore API schema does not support template creation")
-        template_schema = schema.get("definitions", {}).get("TemplateRequest")
+        definitions = schema.get("definitions")
+        if not isinstance(definitions, dict):
+            raise APIError("Semaphore API schema definitions were not an object")
+        template_schema = definitions.get("TemplateRequest")
         properties = _schema_properties(schema, template_schema)
         if not properties:
             raise APIError("Semaphore API schema does not define TemplateRequest properties")

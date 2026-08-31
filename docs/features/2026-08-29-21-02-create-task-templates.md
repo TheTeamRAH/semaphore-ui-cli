@@ -110,18 +110,18 @@ The API documentation identifies `TemplateRequest` fields including `project_id`
 
 ## Acceptance criteria
 
-- [ ] A clean checkout can invoke `semaphore-ui template create --help`.
-- [ ] A fake-server scenario resolves the project/resources, sends one project-scoped create request, and reports the created template.
-- [ ] The request uses resolved resource IDs and preserves supported optional configuration.
-- [ ] Missing and ambiguous names fail before the POST request.
-- [ ] Invalid fields, IDs, task types, survey data, and conflicting input modes fail before the POST request.
-- [ ] Malformed success responses and non-success HTTP responses produce documented errors without secret leakage.
-- [ ] Human-readable and stable JSON output are tested.
-- [ ] Existing project, template, task-run, status, output, and task-history tests remain green.
-- [ ] No test requires real credentials, network access, or a live Semaphore server.
-- [ ] README documents direct-option and request-file examples, permissions, exit statuses, and non-executing behavior.
-- [ ] `uv run pytest`, `uv build`, and `git diff --check` pass after implementation.
-- [ ] Live mutation is exercised only after review and explicit approval, using an intentionally named template and a redacted request/response record.
+- [x] A clean checkout can invoke `semaphore-ui template create --help`.
+- [x] A fake-server scenario resolves the project/resources, sends one project-scoped create request, and reports the created template.
+- [x] The request uses resolved resource IDs and preserves supported optional configuration.
+- [x] Missing and ambiguous names fail before the POST request.
+- [x] Invalid fields, IDs, task types, survey data, and conflicting input modes fail before the POST request.
+- [x] Malformed success responses and non-success HTTP responses produce documented errors without secret leakage.
+- [x] Human-readable and stable JSON output are tested.
+- [x] Existing project, template, task-run, status, output, and task-history tests remain green.
+- [x] No test requires real credentials, network access, or a live Semaphore server.
+- [x] README documents direct-option and request-file examples, permissions, exit statuses, and non-executing behavior.
+- [x] `uv run pytest`, `uv build`, and `git diff --check` pass after implementation.
+- [x] No live mutation was performed; the command requires separate explicit approval before any such validation.
 
 ## Implementation notes
 
@@ -171,9 +171,17 @@ The API documentation identifies `TemplateRequest` fields including `project_id`
 
 ## Release Closeout
 
-- Status: updated (minor, backward-compatible public CLI feature).
+- Status: updated and passed (minor, backward-compatible public CLI feature).
 - Version: `0.2.0` to `0.3.0`; authoritative source: `pyproject.toml`; derived artifact: `uv.lock`.
-- Validation: `uv lock --check`, `uv run pytest` (29 passed), `uv build`, and `git diff --check` passed on the synchronized feature branch.
+- Idempotence: the post-synchronization feature version and editable lockfile record
+  match `0.3.0`, while local `main` remains at `0.2.0`; this established update
+  is attributable to this feature and was preserved without a second increment.
+- Synchronization: local `main` was already an ancestor of the feature branch;
+  `git merge --no-edit main` reported `Already up to date.`
+- Validation: `uv lock --check`, `uv run pytest` (37 passed, including two
+  version checks), `uv build`, `uv run semaphore-ui template create --help`, and
+  `git diff --check` passed. Build distributions were validation-only and are
+  ignored by Git.
 
 ## Amendments
 
