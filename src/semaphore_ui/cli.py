@@ -30,6 +30,7 @@ import sys
 import time
 from typing import Any, Callable
 
+from . import __version__
 from .api import SemaphoreClient, SemaphoreError, TERMINAL_STATES, TaskTimeoutError
 
 
@@ -333,6 +334,7 @@ def build_parser() -> argparse.ArgumentParser:
         An argparse parser whose subcommands carry their handler functions.
     """
     parser = argparse.ArgumentParser(prog="semaphore-ui", description="Run and inspect Semaphore UI tasks")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
         "--insecure",
         action="store_true",

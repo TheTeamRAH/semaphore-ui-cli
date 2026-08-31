@@ -40,6 +40,13 @@ Do not commit or pass the token as a command-line argument. Certificate verifica
 
 ### Examples
 
+Check the installed version:
+
+```console
+$ semaphore-ui --version
+semaphore-ui 0.2.0
+```
+
 List projects and templates:
 
 ```bash
@@ -83,12 +90,19 @@ semaphore-ui wait --project configuration_management --task 4
 semaphore-ui output --project configuration_management --task 4 --plain
 ```
 
+Check a task:
+
+```bash
+semaphore-ui status --project NAME --task ID
+```
+
 Use `--json` on commands that return structured data for CI and agent integrations. `projects` and `templates` return API resource arrays. `run`, `status`, and `wait` return an envelope with `project`, `template` (for `run`), `task`, and `variables` (for `run`); `task` contains the Semaphore task ID, status, timestamps, and environment. `output --json` returns output entries with `time`, `task_id`, and `output`. Successful tasks exit `0`; task failures exit `1`; configuration, lookup, API, and timeout errors exit `2`.
 
 ## Recent Features
 
 | Date | Purpose | Spec | Author |
 | --- | --- | --- | --- |
+| 2026-08-31-14-28 | Document v0.2.0 release candidate CLI usage | [Specification](docs/features/2026-08-31-14-28-document-release-candidate-usage.md) | jibbajabber |
 | 2026-08-29-21-02 | Create Semaphore task templates | [Specification](docs/features/2026-08-29-21-02-create-task-templates.md) | whose-footprints-are-these |
 | 2026-08-29-11-28 | Discover and filter Semaphore task history | [Specification](docs/features/2026-08-29-11-28-task-discovery.md) | whose-footprints-are-these |
 | 2026-08-28-19-59 | Trigger Semaphore tasks by project and template name | [Specification](docs/features/2026-08-28-19-59-trigger-task-by-name.md) | whose-footprints-are-these |
