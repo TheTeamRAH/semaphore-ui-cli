@@ -32,6 +32,7 @@ from typing import Any, Callable
 
 from . import __version__
 from .api import SemaphoreClient, SemaphoreError, TERMINAL_STATES, TaskTimeoutError
+from .validators import require_nonempty_string, require_positive_int
 
 
 def _variables(values: list[str]) -> dict[str, str]:
@@ -167,52 +168,175 @@ _TEMPLATE_FIELDS = {
 _TEMPLATE_REQUIRED_FIELDS = {"name", "repository", "inventory", "environment", "playbook"}
 _SURVEY_TYPES = {"", "int", "enum", "secret", "text"}
 _SURVEY_TARGETS = {"", "env"}
-
-
-def _require_nonempty_string(value: Any, field: str) -> str:
-    """Validate and return a non-empty request string."""
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"template {field} must be a non-empty string")
-    return value
+_SURVEY_FIELDS = {"name", "title", "description", "type", "target", "required", "values"}
 
 
 def _validate_survey_vars(value: Any) -> list[dict[str, Any]]:
-    """Validate the supported non-secret portion of survey-variable configuration."""
+    """Validate the supported non-secret portion of survey-variable configuration.
+
+    Args:
+        value: Survey variable array from a template request.
+
+    Returns:
+        The validated survey variable objects.
+
+    Raises:
+        ValueError: If a survey variable has an unsupported shape or secret value.
+    """
     if not isinstance(value, list):
         raise ValueError("template survey_vars must be a list")
-    result = []
-    allowed = {"name", "title", "description", "type", "target", "required", "values"}
-    for index, item in enumerate(value):
-        if not isinstance(item, dict) or set(item) - allowed:
-            raise ValueError(f"template survey_vars[{index}] has unsupported fields")
-        for field in ("name", "title"):
-            _require_nonempty_string(item.get(field), f"survey_vars[{index}].{field}")
-        if "description" in item and not isinstance(item["description"], str):
-            raise ValueError(f"template survey_vars[{index}].description must be a string")
-        if item.get("type", "") not in _SURVEY_TYPES:
-            raise ValueError(f"template survey_vars[{index}].type is unsupported")
-        if item.get("target", "") not in _SURVEY_TARGETS:
-            raise ValueError(f"template survey_vars[{index}].target is unsupported")
-        if "required" in item and not isinstance(item["required"], bool):
-            raise ValueError(f"template survey_vars[{index}].required must be a boolean")
-        if "values" in item:
-            if item.get("type") == "secret":
-                raise ValueError("template secret survey variables cannot include values")
-            if not isinstance(item["values"], list) or not all(
-                isinstance(option, dict)
-                and set(option) <= {"name", "value"}
-                and isinstance(option.get("name"), str)
-                and isinstance(option.get("value"), str)
-                for option in item["values"]
-            ):
-                raise ValueError(f"template survey_vars[{index}].values must be name/value objects")
-        result.append(item)
-    return result
+    return [_validate_survey_var(item, index) for index, item in enumerate(value)]
+
+
+def _validate_survey_var(value: Any, index: int) -> dict[str, Any]:
+    """Validate one survey-variable object.
+
+    Args:
+        value: Candidate survey-variable object.
+        index: Zero-based position used in validation messages.
+
+    Returns:
+        The validated survey-variable object.
+
+    Raises:
+        ValueError: If a field is malformed, unsupported, or exposes a secret.
+    """
+    item = _require_survey_object(value, index)
+    _validate_survey_identity(item, index)
+    _validate_survey_options(item, index)
+    return item
+
+
+def _require_survey_object(value: Any, index: int) -> dict[str, Any]:
+    """Return a survey-variable mapping with only supported fields.
+
+    Args:
+        value: Candidate survey-variable value.
+        index: Zero-based position used in validation messages.
+
+    Returns:
+        The typed survey-variable mapping.
+
+    Raises:
+        ValueError: If the value is not an object or has unknown fields.
+    """
+    if not isinstance(value, dict):
+        raise ValueError(f"template survey_vars[{index}] has unsupported fields")
+    if set(value) - _SURVEY_FIELDS:
+        raise ValueError(f"template survey_vars[{index}] has unsupported fields")
+    return value
+
+
+def _validate_survey_identity(item: dict[str, Any], index: int) -> None:
+    """Validate a survey variable's required identity and descriptive fields.
+
+    Args:
+        item: Typed survey-variable mapping.
+        index: Zero-based position used in validation messages.
+
+    Raises:
+        ValueError: If required strings or description are invalid.
+    """
+    for field in ("name", "title"):
+        require_nonempty_string(
+            item.get(field), ValueError, f"template survey_vars[{index}].{field} must be a non-empty string"
+        )
+    if "description" in item and not isinstance(item["description"], str):
+        raise ValueError(f"template survey_vars[{index}].description must be a string")
+
+
+def _validate_survey_options(item: dict[str, Any], index: int) -> None:
+    """Validate a survey variable's type, target, required flag, and options.
+
+    Args:
+        item: Typed survey-variable mapping.
+        index: Zero-based position used in validation messages.
+
+    Raises:
+        ValueError: If an option is unsupported or could expose a secret value.
+    """
+    _validate_survey_choice(item, "type", _SURVEY_TYPES, index)
+    _validate_survey_choice(item, "target", _SURVEY_TARGETS, index)
+    if "required" in item and not isinstance(item["required"], bool):
+        raise ValueError(f"template survey_vars[{index}].required must be a boolean")
+    if "values" in item:
+        _validate_survey_values(item, index)
+
+
+def _validate_survey_choice(
+    item: dict[str, Any], field: str, supported_values: set[str], index: int
+) -> None:
+    """Validate one optional survey field against its supported values.
+
+    Args:
+        item: Typed survey-variable mapping.
+        field: Optional survey field to validate.
+        supported_values: Values accepted for the field.
+        index: Zero-based position used in validation messages.
+
+    Raises:
+        ValueError: If the field is present with an unsupported value.
+    """
+    if item.get(field, "") not in supported_values:
+        raise ValueError(f"template survey_vars[{index}].{field} is unsupported")
+
+
+def _validate_survey_values(item: dict[str, Any], index: int) -> None:
+    """Validate non-secret named options for one survey variable.
+
+    Args:
+        item: Typed survey-variable mapping that contains ``values``.
+        index: Zero-based position used in validation messages.
+
+    Raises:
+        ValueError: If a secret variable supplies values or the option shape is invalid.
+    """
+    if item.get("type") == "secret":
+        raise ValueError("template secret survey variables cannot include values")
+    if not _are_named_string_values(item["values"]):
+        raise ValueError(f"template survey_vars[{index}].values must be name/value objects")
+
+
+def _are_named_string_values(value: Any) -> bool:
+    """Return whether survey values have the supported name/value object shape.
+
+    Args:
+        value: Candidate survey-variable options from the request file.
+
+    Returns:
+        True when every option has only non-empty string ``name`` and ``value`` fields.
+    """
+    return isinstance(value, list) and all(_is_named_string_value(option) for option in value)
+
+
+def _is_named_string_value(value: Any) -> bool:
+    """Return whether one survey option has only string name and value fields.
+
+    Args:
+        value: Candidate survey-variable option.
+
+    Returns:
+        True when the candidate has the supported object shape.
+    """
+    if not isinstance(value, dict) or set(value) - {"name", "value"}:
+        return False
+    return isinstance(value.get("name"), str) and isinstance(value.get("value"), str)
 
 
 def _validate_task_params(value: Any) -> dict[str, Any]:
-    """Validate task parameters accepted by the published Semaphore API schema."""
-    if not isinstance(value, dict) or set(value) - {"environment", "git_branch", "message", "arguments", "params"}:
+    """Validate task parameters accepted by the published Semaphore API schema.
+
+    Args:
+        value: Task parameter object from a template request.
+
+    Returns:
+        The validated task parameter object.
+
+    Raises:
+        ValueError: If a parameter field or value has an unsupported shape.
+    """
+    allowed_fields = {"environment", "git_branch", "message", "arguments", "params"}
+    if not isinstance(value, dict) or set(value) - allowed_fields:
         raise ValueError("template task_params has unsupported fields")
     for field in ("environment", "git_branch", "message", "arguments"):
         if field in value and not isinstance(value[field], str):
@@ -223,19 +347,55 @@ def _validate_task_params(value: Any) -> dict[str, Any]:
         list_fields = {"limit", "tags", "skip_tags"}
         if not isinstance(params, dict) or set(params) - boolean_fields - list_fields:
             raise ValueError("template task_params.params has unsupported fields")
-        if any(field in params and not isinstance(params[field], bool) for field in boolean_fields):
+        if _contains_non_boolean(params, boolean_fields):
             raise ValueError("template task_params.params boolean values must be booleans")
-        if any(
-            field in params
-            and (not isinstance(params[field], list) or not all(isinstance(item, str) for item in params[field]))
-            for field in list_fields
-        ):
+        if _contains_non_string_list(params, list_fields):
             raise ValueError("template task_params.params list values must be string lists")
     return value
 
 
+def _contains_non_boolean(values: dict[str, Any], fields: set[str]) -> bool:
+    """Return whether any selected field is present with a non-boolean value.
+
+    Args:
+        values: Candidate parameter mapping.
+        fields: Keys whose values must be booleans.
+
+    Returns:
+        True when a present selected field is not a boolean.
+    """
+    return any(field in values and not isinstance(values[field], bool) for field in fields)
+
+
+def _contains_non_string_list(values: dict[str, Any], fields: set[str]) -> bool:
+    """Return whether any selected field is present with a non-string-list value.
+
+    Args:
+        values: Candidate parameter mapping.
+        fields: Keys whose values must be lists of strings.
+
+    Returns:
+        True when a present selected field is not a string list.
+    """
+    return any(
+        field in values
+        and (not isinstance(values[field], list) or not all(isinstance(item, str) for item in values[field]))
+        for field in fields
+    )
+
+
 def _validate_template_request(request: dict[str, Any]) -> dict[str, Any]:
-    """Validate a name-based template request before any resource lookup or POST."""
+    """Validate a name-based template request before resource lookup or POST.
+
+    Args:
+        request: Template fields supplied directly or loaded from JSON.
+
+    Returns:
+        A validated copy of the request, with the default template type included.
+
+    Raises:
+        ValueError: If required fields, types, or nested settings are invalid.
+    """
     unknown = set(request) - _TEMPLATE_FIELDS
     if unknown:
         raise ValueError(f"template request has unsupported fields: {', '.join(sorted(unknown))}")
@@ -244,7 +404,9 @@ def _validate_template_request(request: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"template request is missing required fields: {', '.join(missing)}")
     result = dict(request)
     for field in _TEMPLATE_REQUIRED_FIELDS:
-        result[field] = _require_nonempty_string(result[field], field)
+        result[field] = require_nonempty_string(
+            result[field], ValueError, f"template {field} must be a non-empty string"
+        )
     for field in ("description", "git_branch", "arguments", "view"):
         if field in result and not isinstance(result[field], str):
             raise ValueError(f"template {field} must be a string")
@@ -260,7 +422,17 @@ def _validate_template_request(request: dict[str, Any]) -> dict[str, Any]:
 
 
 def _template_request_from_args(args: argparse.Namespace) -> dict[str, Any]:
-    """Load one exclusive direct-option or JSON-file template request."""
+    """Load one exclusive direct-option or JSON-file template request.
+
+    Args:
+        args: Parsed template-create command arguments.
+
+    Returns:
+        A locally validated name-based request.
+
+    Raises:
+        ValueError: If modes conflict or the request file cannot be used safely.
+    """
     direct = {
         field: getattr(args, field)
         for field in _TEMPLATE_FIELDS
@@ -285,7 +457,15 @@ def _template_request_from_args(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _safe_template_configuration(request: dict[str, Any], resources: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    """Return stable, non-secret configuration safe for command output."""
+    """Return stable, non-secret configuration safe for command output.
+
+    Args:
+        request: Validated request before name-to-ID conversion.
+        resources: Successfully resolved project resources by request field.
+
+    Returns:
+        An output-safe configuration envelope without sensitive request values.
+    """
     configuration = {
         key: {"id": resources[key]["id"], "name": resources[key]["name"]}
         for key in ("repository", "inventory", "environment")
@@ -299,24 +479,47 @@ def _safe_template_configuration(request: dict[str, Any], resources: dict[str, d
 
 
 def _resource_id(resource: dict[str, Any], resource_name: str) -> int:
-    """Return a resolved resource's positive ID before a mutating request."""
-    resource_id = resource.get("id")
-    if isinstance(resource_id, bool) or not isinstance(resource_id, int) or resource_id <= 0:
-        raise ValueError(f"resolved {resource_name} did not contain a positive id")
-    return resource_id
+    """Return a resolved resource's positive ID before a mutating request.
+
+    Args:
+        resource: Resource object returned by Semaphore.
+        resource_name: Human-readable name for a validation error.
+
+    Returns:
+        A positive resource identifier.
+
+    Raises:
+        ValueError: If the response does not contain a positive integer ID.
+    """
+    return require_positive_int(
+        resource.get("id"), ValueError, f"resolved {resource_name} did not contain a positive id"
+    )
 
 
 def _handle_template_create(args: argparse.Namespace, client: SemaphoreClient) -> int:
-    """Resolve named resources, explicitly create one template, and report it safely."""
+    """Resolve named resources, create one template, and report it safely.
+
+    Args:
+        args: Parsed template-create arguments.
+        client: Authenticated client used for lookup, preflight, and creation.
+
+    Returns:
+        Zero after successful creation.
+
+    Raises:
+        SemaphoreError: If Semaphore rejects lookup, preflight, or creation.
+        ValueError: If request or resolved-resource validation fails.
+    """
     request = _template_request_from_args(args)
     project = client.find_project(args.project)
+    project_id = _resource_id(project, "project")
     resources = {
-        "repository": client.find_repository(project["id"], request["repository"]),
-        "inventory": client.find_inventory(project["id"], request["inventory"]),
-        "environment": client.find_environment(project["id"], request["environment"]),
+        "repository": client.find_repository(project_id, request["repository"]),
+        "inventory": client.find_inventory(project_id, request["inventory"]),
+        "environment": client.find_environment(project_id, request["environment"]),
     }
     if "view" in request:
-        resources["view"] = client.find_view(project["id"], request["view"])
+        resources["view"] = client.find_view(project_id, request["view"])
     payload = {
         key: value
         for key, value in request.items()
@@ -325,7 +528,9 @@ def _handle_template_create(args: argparse.Namespace, client: SemaphoreClient) -
     payload.update(
         {f"{key}_id": _resource_id(resource, key) for key, resource in resources.items()}
     )
-    created = client.create_template(project["id"], payload)
+    payload["project_id"] = project_id
+    client.assert_template_create_supported(payload)
+    created = client.create_template(project_id, payload)
     result = {
         "project": project,
         "template": {key: created[key] for key in ("id", "project_id", "name")},

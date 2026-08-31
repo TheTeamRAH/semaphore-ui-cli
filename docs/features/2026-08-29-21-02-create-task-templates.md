@@ -150,12 +150,18 @@ The API documentation identifies `TemplateRequest` fields including `project_id`
 6. Review the final payload against the deployed `/api-docs` before any live mutation.
 7. Perform live creation only after specification review and explicit approval, recording the template ID and rollback procedure outside version control.
 
-## Open questions
+## Settled decisions
 
-- Should the first command support only Ansible templates, or expose build/deploy and non-Ansible types immediately?
-- Should advanced request files use raw API field names, or a user-facing name-based format resolved into API IDs?
-- Which survey-variable types and task-parameter fields are required for the first real template?
-- Should a future `template delete` feature be designed before live testing so the validation template has a supported rollback path?
+- The initial command supports the default, build, and deploy template types.
+- Advanced request files use name-based references for project resources; the CLI
+  resolves them into positive IDs before creation.
+- The initial supported survey and task-parameter shapes are the documented
+  fields accepted by local validation. The runtime Swagger preflight is the
+  authority for the target instance and rejects unavailable nested fields before
+  POSTing.
+- Template deletion remains out of scope. Live validation, if separately
+  approved, must use an intentionally named template and an operator-managed
+  rollback procedure.
 
 ## Sources
 
@@ -174,3 +180,31 @@ The API documentation identifies `TemplateRequest` fields including `project_id`
 - Correct the prematurely completed release closeout: update the README's
   release-facing `--version` output to `0.3.0` and add regression coverage that
   compares that documented output with the authoritative package version.
+- Before feature completion, add Google-style contract docstrings to new public
+  APIs and important private helpers where their parameters, returns, errors, or
+  safety guarantees are not self-evident. Refactor the new request-validation
+  code into small named predicates or helpers so that compound conditionals do
+  not obscure supported fields and error behaviour. Preserve CLI behaviour and
+  stable output while making this structural change.
+- Expand test coverage for every template-create acceptance criterion: invalid
+  resolved project and resource IDs; missing and ambiguous project resources;
+  optional view resolution; request validation failures that must occur before a
+  POST; create-request HTTP and malformed-response failures; and preservation of
+  supported optional configuration. Tests must assert that rejected input does
+  not issue the create request.
+- Reconcile the compatibility contract before implementation is marked complete.
+  The CLI performs an authenticated runtime preflight against the target
+  instance's machine-readable Swagger schema endpoint, `/api/swagger`, before a
+  template-create POST. `/api-docs` is the human-facing Swagger UI and must not
+  be parsed as a schema. The preflight must confirm that the creation path and
+  every emitted payload field are supported by the instance schema. An
+  unavailable, malformed, or incompatible schema is a validation failure (exit
+  status `2`) and must prevent the POST. Tests must demonstrate the compatible
+  path and each no-POST failure mode. The parser remains implementation
+  discretion, provided no new runtime dependency is introduced without separate
+  approval.
+- Extract duplicated validation behavior from `api.py` and `cli.py` into a new
+  `validators.py` module. Keep transport-specific response/schema validation and
+  CLI-specific request-shape validation in their owning modules; only move
+  shared positive-ID and non-empty-string checks. Add focused tests for the
+  shared contracts and preserve existing CLI/API error wording where practical.

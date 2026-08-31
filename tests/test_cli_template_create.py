@@ -6,6 +6,8 @@ from semaphore_ui import cli
 
 
 class FakeClient:
+    schema_checked = False
+
     def find_project(self, name):
         assert name == "configuration_management"
         return {"id": 1, "name": name}
@@ -22,7 +24,12 @@ class FakeClient:
         assert (project_id, name) == (1, "default")
         return {"id": 4, "name": name}
 
+    def find_view(self, project_id, name):
+        assert (project_id, name) == (1, "operations")
+        return {"id": 5, "name": name}
+
     def create_template(self, project_id, payload):
+        assert self.schema_checked
         assert project_id == 1
         expected = {
             "name": "show-firewall-interface",
@@ -30,7 +37,6 @@ class FakeClient:
             "inventory_id": 3,
             "environment_id": 4,
             "playbook": "site.yml",
-            "git_branch": "main",
             "type": "",
         }
         assert payload.items() >= expected.items()
@@ -40,6 +46,10 @@ class FakeClient:
             "name": payload["name"],
             "survey_vars": [{"name": "password", "value": "secret"}],
         }
+
+    def assert_template_create_supported(self, payload):
+        assert payload["project_id"] == 1
+        self.schema_checked = True
 
 
 def test_template_create_resolves_names_and_prints_safe_json(monkeypatch, capsys):
@@ -110,6 +120,47 @@ def test_template_create_reads_advanced_request_file(monkeypatch, capsys, tmp_pa
 
     assert result == 0
     assert capsys.readouterr().out == "Created template 5: show-firewall-interface\n"
+
+
+def test_template_create_resolves_an_optional_view(monkeypatch, tmp_path):
+    request_file = tmp_path / "template.json"
+    request_file.write_text(
+        json.dumps(
+            {
+                "name": "show-firewall-interface",
+                "repository": "configuration-management",
+                "inventory": "homelab",
+                "environment": "default",
+                "playbook": "site.yml",
+                "view": "operations",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "_client", lambda insecure=False: FakeClient())
+
+    assert cli.main(["template", "create", "--project", "configuration_management", "--file", str(request_file)]) == 0
+
+
+def test_template_create_rejects_an_invalid_project_id_before_resource_lookup(monkeypatch):
+    class InvalidProjectClient:
+        def find_project(self, name):
+            return {"id": True, "name": name}
+
+        def find_repository(self, project_id, name):
+            raise AssertionError("resource lookup must not occur")
+
+    monkeypatch.setattr(cli, "_client", lambda insecure=False: InvalidProjectClient())
+
+    result = cli.main(
+        [
+            "template", "create", "--project", "configuration_management", "--name", "template",
+            "--repository", "repository", "--inventory", "inventory", "--environment", "environment",
+            "--playbook", "site.yml",
+        ]
+    )
+
+    assert result == 2
 
 
 def test_template_create_rejects_conflicting_or_secret_request_before_api_lookup(monkeypatch, tmp_path):

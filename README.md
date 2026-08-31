@@ -130,7 +130,9 @@ the created template and only safe effective configuration; it deliberately
 omits arguments, survey values, and task parameters. Template creation persists
 configuration but does not execute a playbook. The token must have permission to
 create templates and read the referenced project resources; authorization
-failures return exit status `2`.
+failures return exit status `2`. Before creating a template, the CLI checks the
+target instance's Swagger schema at `/api/swagger`; an unavailable, malformed,
+or incompatible schema also returns exit status `2` and prevents the POST.
 
 Wait for completion and retrieve output:
 

@@ -85,3 +85,53 @@ def test_template_resource_lookup_rejects_ambiguous_names():
 
     with pytest.raises(LookupError, match="Multiple Semaphore repositories"):
         client.find_repository(1, "same")
+
+
+def test_template_resource_lookup_rejects_missing_inventory():
+    client = SemaphoreClient(
+        "https://semaphore.example",
+        "secret",
+        responses={("GET", "/api/project/1/inventory"): []},
+    )
+
+    with pytest.raises(LookupError, match="No Semaphore inventory"):
+        client.find_inventory(1, "missing")
+
+
+def test_template_create_schema_preflight_requires_supported_path_and_payload_fields():
+    schema = {
+        "paths": {"/project/{project_id}/templates": {"post": {}}},
+        "definitions": {
+            "TemplateRequest": {
+                "properties": {
+                    "project_id": {},
+                    "repository_id": {},
+                    "inventory_id": {},
+                    "environment_id": {},
+                    "name": {},
+                    "playbook": {},
+                    "git_branch": {},
+                }
+            }
+        },
+    }
+    client = SemaphoreClient(
+        "https://semaphore.example",
+        "secret",
+        responses={("GET", "/api/swagger"): schema},
+    )
+    payload = {
+        "project_id": 1,
+        "repository_id": 2,
+        "inventory_id": 3,
+        "environment_id": 4,
+        "name": "template",
+        "playbook": "site.yml",
+        "git_branch": "main",
+    }
+
+    client.assert_template_create_supported(payload)
+
+    schema["definitions"]["TemplateRequest"]["properties"].pop("git_branch")
+    with pytest.raises(APIError, match="git_branch"):
+        client.assert_template_create_supported(payload)
