@@ -14,7 +14,7 @@ sources:
   - https://raw.githubusercontent.com/semaphoreui/semaphore/develop/db/Template.go
   - https://semaphoreui.com/docs/user-guide/task-templates
   - https://semaphoreui.com/docs/admin-guide/api
-status: in_progress
+status: completed
 ---
 
 # Support Survey Defaults and Vaults in Template Creation
@@ -250,6 +250,13 @@ as `proposed` and must not be implemented until user approval.
 - Validation: `uv lock --check`, `uv run pytest` (43 passed), `uv build`,
   `uv run semaphore-ui --version` (reported `0.4.0`), and `git diff --check`
   passed. Build distributions are validation-only ignored artifacts.
+- Amendment release: updated and passed (patch). The completed amendment adds
+  optional no-environment creation and direct nested CLI options, completing
+  the existing feature scope. Version: `0.4.0` to `0.4.1`; `pyproject.toml`
+  remains authoritative and `uv.lock` was regenerated. After local-main
+  synchronization reported `Already up to date.`, `uv lock --check`, `uv run
+  pytest` (45 passed), `uv build`, `uv run semaphore-ui --version` (reported
+  `0.4.1`), and `git diff --check` passed.
 
 ## Amendments
 
