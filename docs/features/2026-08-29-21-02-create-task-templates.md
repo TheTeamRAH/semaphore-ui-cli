@@ -12,7 +12,7 @@ sources:
   - https://raw.githubusercontent.com/semaphoreui/semaphore/develop/api-docs.yml
   - https://semaphoreui.com/docs/admin-guide/api
   - https://semaphoreui.com/docs/user-guide/task-templates
-status: completed
+status: in_progress
 ---
 
 # Create Semaphore Task Templates
@@ -186,6 +186,11 @@ The API documentation identifies `TemplateRequest` fields including `project_id`
 
 ## Amendments
 
+- Reopen the current specification for documentation-only changes. Add
+  Google-style docstrings to every new non-test function other than list/find
+  helpers, and add safe, representative data-structure examples to the complex
+  template and Swagger validation helpers. Do not change runtime behavior,
+  validation rules, API requests, CLI output, or package version.
 - Preserve helper-first function order throughout the Python package: a
   module-level private helper must appear before any other module-level function
   that calls it, except for direct recursion. Add a structural regression test

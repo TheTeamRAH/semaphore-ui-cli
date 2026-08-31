@@ -364,6 +364,11 @@ def _validate_task_params(value: Any) -> dict[str, Any]:
 
     Raises:
         ValueError: If a parameter field or value has an unsupported shape.
+
+    Examples:
+        ``{"params": {"dry_run": true, "tags": ["firewall"]}}`` is a
+        supported task-parameter object. ``dry_run`` must be boolean, while
+        ``tags``, ``limit``, and ``skip_tags`` must be lists of strings.
     """
     allowed_fields = {"environment", "git_branch", "message", "arguments", "params"}
     if not isinstance(value, dict) or set(value) - allowed_fields:
@@ -395,6 +400,12 @@ def _validate_template_request(request: dict[str, Any]) -> dict[str, Any]:
 
     Raises:
         ValueError: If required fields, types, or nested settings are invalid.
+
+    Examples:
+        A minimal request is ``{"name": "deploy-web", "repository": "web",
+        "inventory": "production", "environment": "default", "playbook":
+        "deploy.yml"}``. The returned copy includes ``"type": ""`` when no
+        template type is supplied.
     """
     unknown = set(request) - _TEMPLATE_FIELDS
     if unknown:
@@ -432,6 +443,14 @@ def _template_request_from_args(args: argparse.Namespace) -> dict[str, Any]:
 
     Raises:
         ValueError: If modes conflict or the request file cannot be used safely.
+
+    Examples:
+        Direct parser fields produce a complete request such as
+        ``{"name": "deploy-web", "repository": "web", "inventory":
+        "production", "environment": "default", "playbook": "deploy.yml"}``.
+        When ``args.file`` is set, its JSON object supplies that same complete
+        request shape; the file path itself is not included in the request, and
+        file and direct-option modes cannot be combined.
     """
     direct = {
         field: getattr(args, field)
@@ -465,6 +484,17 @@ def _safe_template_configuration(request: dict[str, Any], resources: dict[str, d
 
     Returns:
         An output-safe configuration envelope without sensitive request values.
+
+    Examples:
+        A validated request containing ``{"name": "deploy-web", "repository":
+        "web", "inventory": "production", "environment": "default",
+        "playbook": "deploy.yml", "type": "", "arguments": "--limit web"}``
+        and resources containing repository ``{"id": 2, "name": "web"}``,
+        inventory ``{"id": 3, "name": "production"}``, and environment
+        ``{"id": 4, "name": "default"}`` returns their identities, the
+        playbook, and type. It deliberately omits ``arguments`` and other
+        secret- or execution-sensitive values; an optional view is included only
+        when it has been resolved.
     """
     configuration = {
         key: {"id": resources[key]["id"], "name": resources[key]["name"]}

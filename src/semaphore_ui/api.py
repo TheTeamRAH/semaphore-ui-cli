@@ -110,14 +110,43 @@ def _require_task_status(task: dict[str, Any]) -> str:
 
 
 def _require_positive_id(value: Any, field: str, resource: str) -> int:
-    """Validate a positive integer field in an API resource."""
+    """Validate a positive integer field in an API resource.
+
+    Args:
+        value: Candidate resource-field value.
+        field: Field name for an actionable error message.
+        resource: Human-readable Semaphore resource type.
+
+    Returns:
+        The validated positive integer.
+
+    Raises:
+        APIError: If the value is boolean, non-integer, or not positive.
+    """
     return require_positive_int(
         value, APIError, f"Semaphore {resource} response did not contain a positive integer {field}"
     )
 
 
 def _require_template(template: Any, project_id: int) -> dict[str, Any]:
-    """Validate a created template response and return it."""
+    """Validate a created template response and return it.
+
+    Args:
+        template: Decoded create-template response, for example
+            ``{"id": 17, "project_id": 3, "name": "deploy-web"}``.
+        project_id: Positive ID of the project used for the create request.
+
+    Returns:
+        The original template dictionary after its identity fields are checked.
+
+    Raises:
+        APIError: If the response is not an object, its identity is malformed,
+            or its project ID does not match the request.
+
+    Examples:
+        ``_require_template({"id": 17, "project_id": 3, "name": "deploy-web"}, 3)``
+        returns the supplied template dictionary.
+    """
     if not isinstance(template, dict):
         raise APIError("Semaphore template response was not an object")
     _require_positive_id(template.get("id"), "id", "template")
@@ -144,6 +173,27 @@ def _schema_properties(document: dict[str, Any], schema: Any) -> dict[str, Any]:
 
     Raises:
         APIError: If the fragment has an invalid local definition reference.
+
+    Examples:
+        A Swagger document stores the template schema under
+        ``document["definitions"]["TemplateRequest"]``. In this miniature
+        document, ``TemplateRequest`` uses ``allOf`` to combine a reusable base
+        with template-specific fields::
+
+            document = {"definitions": {
+                "TemplateBase": {"properties": {"name": {"type": "string"}}},
+                "TemplateRequest": {"allOf": [
+                    {"$ref": "#/definitions/TemplateBase"},
+                    {"properties": {"type": {"enum": ["build", "deploy"]}}},
+                ]},
+            }}
+
+        ``allOf`` is Swagger's schema-composition list: the effective schema
+        includes the properties from every listed fragment. Calling this helper
+        with ``document`` and ``document["definitions"]["TemplateRequest"]``
+        returns properties for both ``name`` and ``type``. Only local
+        ``#/definitions/...`` references resolve; later components replace
+        duplicate property names.
     """
     if not isinstance(schema, dict):
         return {}
@@ -174,6 +224,20 @@ def _validate_schema_value(document: dict[str, Any], schema: Any, value: Any, fi
 
     Raises:
         APIError: If a submitted field or enum value is unsupported.
+
+    Examples:
+        For a template-create payload, first select the schema stored at
+        ``document["definitions"]["TemplateRequest"]``::
+
+            schema = document["definitions"]["TemplateRequest"]
+            value = {"name": "deploy-web", "type": "build"}
+            _validate_schema_value(document, schema, value, "template")
+
+        If the ``TemplateRequest`` schema allows only ``"build"`` and
+        ``"deploy"`` for ``type``, this succeeds; changing it to ``"delete"``
+        raises ``APIError``. For list fields, the helper applies the schema's
+        ``items`` fragment to each element. Passing the complete document is
+        necessary when ``TemplateRequest`` uses a local reference or ``allOf``.
     """
     if isinstance(schema, dict) and isinstance(schema.get("enum"), list) and value not in schema["enum"]:
         raise APIError(f"Semaphore API schema does not support {field}={value!r}")
