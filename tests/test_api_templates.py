@@ -115,6 +115,22 @@ def test_access_key_lookup_uses_exact_name_and_required_sorting():
     }
 
 
+def test_access_key_lookup_rejects_ambiguous_names():
+    client = SemaphoreClient(
+        "https://semaphore.example",
+        "secret",
+        responses={
+            ("GET", "/api/project/1/keys?sort=name&order=asc"): [
+                {"id": 6, "name": "Vault password"},
+                {"id": 7, "name": "Vault password"},
+            ]
+        },
+    )
+
+    with pytest.raises(LookupError, match="Multiple Semaphore access keys"):
+        client.find_access_key(1, "Vault password")
+
+
 def test_template_create_schema_preflight_requires_supported_path_and_payload_fields():
     schema = {
         "paths": {"/project/{project_id}/templates": {"post": {}}},
@@ -209,3 +225,22 @@ def test_template_create_schema_preflight_accepts_known_survey_extensions():
             ],
         }
     )
+
+    schema["definitions"]["TemplateSurveyVar"]["properties"]["default_value"] = {"enum": ["web-01"]}
+    client.assert_template_create_supported(
+        {
+            "name": "template",
+            "survey_vars": [
+                {"name": "target", "title": "Target", "type": "", "default_value": "web-01"}
+            ],
+        }
+    )
+    with pytest.raises(APIError, match="default_value"):
+        client.assert_template_create_supported(
+            {
+                "name": "template",
+                "survey_vars": [
+                    {"name": "target", "title": "Target", "type": "", "default_value": "web-02"}
+                ],
+            }
+        )

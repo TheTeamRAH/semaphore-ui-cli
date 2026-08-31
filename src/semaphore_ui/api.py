@@ -221,9 +221,7 @@ def _is_known_template_schema_extension(field: str, value: Any) -> bool:
     property or enum value. This intentionally recognizes only those two
     precise paths; all other absent schema elements remain validation errors.
     """
-    return field.startswith("survey_vars[") and (
-        field.endswith(".default_value") or (field.endswith(".type") and value == "select")
-    )
+    return field.startswith("survey_vars[") and field.endswith(".type") and value == "select"
 
 
 def _validate_schema_value(document: dict[str, Any], schema: Any, value: Any, field: str) -> None:
@@ -264,7 +262,7 @@ def _validate_schema_value(document: dict[str, Any], schema: Any, value: Any, fi
         for key, item in value.items():
             property_schema = properties.get(key)
             if property_schema is None:
-                if _is_known_template_schema_extension(f"{field}.{key}", item):
+                if field.startswith("survey_vars[") and key == "default_value":
                     continue
                 raise APIError(f"Semaphore API schema does not support template field {field}.{key}")
             _validate_schema_value(document, property_schema, item, f"{field}.{key}")

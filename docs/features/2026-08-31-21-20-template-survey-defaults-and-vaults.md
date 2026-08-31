@@ -181,27 +181,27 @@ and prevents the create request.
 
 ## Acceptance criteria
 
-- [ ] Request files with non-secret scalar and `select`-array
+- [x] Request files with non-secret scalar and `select`-array
   `survey_vars[].default_value` values create payloads preserving their exact
   JSON shapes and values.
-- [ ] The same request succeeds when a compatible fake Swagger schema omits
+- [x] The same request succeeds when a compatible fake Swagger schema omits
   `default_value` and the `select` enum value; every other unsupported field
   still fails preflight without a POST.
-- [ ] A Swagger schema that explicitly constrains either extension is respected.
-- [ ] An invalid default shape/type combination and a default on a secret survey
+- [x] A Swagger schema that explicitly constrains either extension is respected.
+- [x] An invalid default shape/type combination and a default on a secret survey
   variable fail before lookup, preflight, or POST, without displaying the value.
-- [ ] A request file with password and script vaults resolves each supplied
+- [x] A request file with password and script vaults resolves each supplied
   `vault_key` by exact project-local name and POSTs `vault_key_id`, never the
   reference name.
-- [ ] Missing, ambiguous, or invalid resolved access keys fail before preflight
+- [x] Missing, ambiguous, or invalid resolved access keys fail before preflight
   or POST.
-- [ ] Vault validation rejects every malformed/type-incompatible shape before
+- [x] Vault validation rejects every malformed/type-incompatible shape before
   API use.
-- [ ] Safe JSON output reports only the allowed vault identities and does not
+- [x] Safe JSON output reports only the allowed vault identities and does not
   reveal defaults, scripts, arguments, task parameters, or credentials.
-- [ ] Existing template-create tests remain green and no test requires network,
+- [x] Existing template-create tests remain green and no test requires network,
   credentials, or a live Semaphore instance.
-- [ ] `uv run pytest`, `uv build`, and `git diff --check` pass.
+- [x] `uv run pytest`, `uv build`, and `git diff --check` pass.
 
 ## Validation plan
 
@@ -237,6 +237,19 @@ a feature branch, tests and declared validation pass, documentation is current,
 the feature branch is synchronized with local `main`, mandatory release-closeout
 policy succeeds, and the branch is pushed for review. This specification starts
 as `proposed` and must not be implemented until user approval.
+
+## Release Closeout
+
+- Status: updated and passed. This is a backward-compatible public CLI feature,
+  so the release classification is minor.
+- Version: `0.3.0` to `0.4.0`. `pyproject.toml` is the authoritative source and
+  `uv.lock` was regenerated as the required derived artifact.
+- Synchronization: `git merge --no-edit main` reported `Already up to date.`;
+  local `main` is an ancestor of the feature branch and no Git operation is in
+  progress.
+- Validation: `uv lock --check`, `uv run pytest` (43 passed), `uv build`,
+  `uv run semaphore-ui --version` (reported `0.4.0`), and `git diff --check`
+  passed. Build distributions are validation-only ignored artifacts.
 
 ## Sources
 
