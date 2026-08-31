@@ -12,7 +12,7 @@ sources:
   - https://raw.githubusercontent.com/semaphoreui/semaphore/develop/api-docs.yml
   - https://semaphoreui.com/docs/admin-guide/api
   - https://semaphoreui.com/docs/user-guide/task-templates
-status: in_progress
+status: completed
 ---
 
 # Create Semaphore Task Templates
@@ -178,10 +178,11 @@ The API documentation identifies `TemplateRequest` fields including `project_id`
   is attributable to this feature and was preserved without a second increment.
 - Synchronization: local `main` was already an ancestor of the feature branch;
   `git merge --no-edit main` reported `Already up to date.`
-- Validation: `uv lock --check`, `uv run pytest` (37 passed, including two
-  version checks), `uv build`, `uv run semaphore-ui template create --help`, and
-  `git diff --check` passed. Build distributions were validation-only and are
-  ignored by Git.
+- Validation: after the final local-main synchronization, `uv lock --check`,
+  `uv run pytest` (38 passed, including two version checks and the
+  helper-ordering regression test), `uv build`, `uv run semaphore-ui template
+  create --help`, and `git diff --check` passed. Build distributions were
+  validation-only and are ignored by Git.
 
 ## Amendments
 
