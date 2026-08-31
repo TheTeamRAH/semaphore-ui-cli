@@ -98,6 +98,23 @@ def test_template_resource_lookup_rejects_missing_inventory():
         client.find_inventory(1, "missing")
 
 
+def test_access_key_lookup_uses_exact_name_and_required_sorting():
+    client = SemaphoreClient(
+        "https://semaphore.example",
+        "secret",
+        responses={
+            ("GET", "/api/project/1/keys?sort=name&order=asc"): [
+                {"id": 6, "name": "Production vault password"}
+            ]
+        },
+    )
+
+    assert client.find_access_key(1, "Production vault password") == {
+        "id": 6,
+        "name": "Production vault password",
+    }
+
+
 def test_template_create_schema_preflight_requires_supported_path_and_payload_fields():
     schema = {
         "paths": {"/project/{project_id}/templates": {"post": {}}},
@@ -151,3 +168,44 @@ def test_template_create_schema_preflight_rejects_malformed_definitions():
 
     with pytest.raises(APIError, match="definitions"):
         client.assert_template_create_supported({"name": "template"})
+
+
+def test_template_create_schema_preflight_accepts_known_survey_extensions():
+    schema = {
+        "paths": {"/project/{project_id}/templates": {"post": {}}},
+        "definitions": {
+            "TemplateRequest": {
+                "properties": {
+                    "name": {},
+                    "survey_vars": {"type": "array", "items": {"$ref": "#/definitions/TemplateSurveyVar"}},
+                }
+            },
+            "TemplateSurveyVar": {
+                "properties": {
+                    "name": {},
+                    "title": {},
+                    "type": {"enum": ["", "int", "enum", "secret", "text"]},
+                    "values": {"type": "array", "items": {"$ref": "#/definitions/TemplateSurveyVarValue"}},
+                }
+            },
+            "TemplateSurveyVarValue": {"properties": {"name": {}, "value": {}}},
+        },
+    }
+    client = SemaphoreClient(
+        "https://semaphore.example", "secret", responses={("GET", "/api/swagger"): schema}
+    )
+
+    client.assert_template_create_supported(
+        {
+            "name": "template",
+            "survey_vars": [
+                {
+                    "name": "target",
+                    "title": "Target",
+                    "type": "select",
+                    "values": [{"name": "Web 1", "value": "web-01"}],
+                    "default_value": ["web-01"],
+                }
+            ],
+        }
+    )

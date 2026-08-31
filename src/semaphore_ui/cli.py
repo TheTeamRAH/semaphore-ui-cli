@@ -164,11 +164,14 @@ _TEMPLATE_FIELDS = {
     "survey_vars",
     "task_params",
     "view",
+    "vaults",
 }
 _TEMPLATE_REQUIRED_FIELDS = {"name", "repository", "inventory", "environment", "playbook"}
-_SURVEY_TYPES = {"", "int", "enum", "secret", "text"}
+_SURVEY_TYPES = {"", "int", "enum", "secret", "text", "select"}
 _SURVEY_TARGETS = {"", "env"}
-_SURVEY_FIELDS = {"name", "title", "description", "type", "target", "required", "values"}
+_SURVEY_FIELDS = {"name", "title", "description", "type", "target", "required", "values", "default_value"}
+_VAULT_FIELDS = {"name", "type", "vault_key", "script"}
+_VAULT_TYPES = {"password", "script"}
 
 
 def _is_named_string_value(value: Any) -> bool:
@@ -211,6 +214,30 @@ def _validate_survey_values(item: dict[str, Any], index: int) -> None:
         raise ValueError("template secret survey variables cannot include values")
     if not _are_named_string_values(item["values"]):
         raise ValueError(f"template survey_vars[{index}].values must be name/value objects")
+
+
+def _validate_survey_default(item: dict[str, Any], index: int) -> None:
+    """Validate a non-secret survey default and its type-specific constraints."""
+    if "default_value" not in item:
+        return
+    default = item["default_value"]
+    if isinstance(default, list):
+        if not all(isinstance(value, str) for value in default):
+            raise ValueError(f"template survey_vars[{index}].default_value must contain only strings")
+        if item.get("type") != "select":
+            raise ValueError(f"template survey_vars[{index}].default_value list requires type select")
+        defaults = default
+    elif isinstance(default, str):
+        defaults = [default]
+    else:
+        raise ValueError(f"template survey_vars[{index}].default_value must be a string or string list")
+    if item.get("type") == "secret":
+        raise ValueError("template secret survey variables cannot include default_value")
+    if item.get("type") in {"enum", "select"}:
+        values = item.get("values", [])
+        allowed = {value.get("value") for value in values if isinstance(value, dict)}
+        if any(default_value not in allowed for default_value in defaults):
+            raise ValueError(f"template survey_vars[{index}].default_value must be in values")
 
 
 def _validate_survey_choice(
@@ -285,6 +312,7 @@ def _validate_survey_options(item: dict[str, Any], index: int) -> None:
         raise ValueError(f"template survey_vars[{index}].required must be a boolean")
     if "values" in item:
         _validate_survey_values(item, index)
+    _validate_survey_default(item, index)
 
 
 def _validate_survey_var(value: Any, index: int) -> dict[str, Any]:
@@ -321,6 +349,31 @@ def _validate_survey_vars(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         raise ValueError("template survey_vars must be a list")
     return [_validate_survey_var(item, index) for index, item in enumerate(value)]
+
+
+def _validate_vaults(value: Any) -> list[dict[str, Any]]:
+    """Validate name-based vault configuration without accepting credentials."""
+    if not isinstance(value, list):
+        raise ValueError("template vaults must be a list")
+    result = []
+    for index, vault in enumerate(value):
+        if not isinstance(vault, dict) or set(vault) - _VAULT_FIELDS:
+            raise ValueError(f"template vaults[{index}] has unsupported fields")
+        item = dict(vault)
+        item["name"] = require_nonempty_string(
+            item.get("name"), ValueError, f"template vaults[{index}].name must be a non-empty string"
+        )
+        if item.get("type") not in _VAULT_TYPES:
+            raise ValueError(f"template vaults[{index}].type is unsupported")
+        for field in ("vault_key", "script"):
+            if field in item:
+                item[field] = require_nonempty_string(
+                    item[field], ValueError, f"template vaults[{index}].{field} must be a non-empty string"
+                )
+        if "script" in item and item["type"] != "script":
+            raise ValueError(f"template vaults[{index}].script requires type script")
+        result.append(item)
+    return result
 
 
 def _contains_non_boolean(values: dict[str, Any], fields: set[str]) -> bool:
@@ -429,6 +482,8 @@ def _validate_template_request(request: dict[str, Any]) -> dict[str, Any]:
         result["survey_vars"] = _validate_survey_vars(result["survey_vars"])
     if "task_params" in result:
         result["task_params"] = _validate_task_params(result["task_params"])
+    if "vaults" in result:
+        result["vaults"] = _validate_vaults(result["vaults"])
     return result
 
 
@@ -475,7 +530,9 @@ def _template_request_from_args(args: argparse.Namespace) -> dict[str, Any]:
     return _validate_template_request(direct)
 
 
-def _safe_template_configuration(request: dict[str, Any], resources: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _safe_template_configuration(
+    request: dict[str, Any], resources: dict[str, dict[str, Any]], vaults: list[dict[str, Any]]
+) -> dict[str, Any]:
     """Return stable, non-secret configuration safe for command output.
 
     Args:
@@ -505,6 +562,8 @@ def _safe_template_configuration(request: dict[str, Any], resources: dict[str, d
             configuration[field] = request[field]
     if "view" in resources:
         configuration["view"] = {"id": resources["view"]["id"], "name": resources["view"]["name"]}
+    if vaults:
+        configuration["vaults"] = vaults
     return configuration
 
 
@@ -524,6 +583,25 @@ def _resource_id(resource: dict[str, Any], resource_name: str) -> int:
     return require_positive_int(
         resource.get("id"), ValueError, f"resolved {resource_name} did not contain a positive id"
     )
+
+
+def _resolve_vaults(
+    client: SemaphoreClient, project_id: int, vaults: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Resolve vault-key names into API payload and output-safe vault entries."""
+    payload_vaults = []
+    safe_vaults = []
+    for vault in vaults:
+        payload_vault = {key: value for key, value in vault.items() if key != "vault_key"}
+        safe_vault = {key: vault[key] for key in ("name", "type")}
+        if "vault_key" in vault:
+            key = client.find_access_key(project_id, vault["vault_key"])
+            safe_key = {"id": _resource_id(key, "vault access key"), "name": key["name"]}
+            payload_vault["vault_key_id"] = safe_key["id"]
+            safe_vault["key"] = safe_key
+        payload_vaults.append(payload_vault)
+        safe_vaults.append(safe_vault)
+    return payload_vaults, safe_vaults
 
 
 def _handle_template_create(args: argparse.Namespace, client: SemaphoreClient) -> int:
@@ -550,11 +628,14 @@ def _handle_template_create(args: argparse.Namespace, client: SemaphoreClient) -
     }
     if "view" in request:
         resources["view"] = client.find_view(project_id, request["view"])
+    payload_vaults, safe_vaults = _resolve_vaults(client, project_id, request.get("vaults", []))
     payload = {
         key: value
         for key, value in request.items()
-        if key not in {"repository", "inventory", "environment", "view"}
+        if key not in {"repository", "inventory", "environment", "view", "vaults"}
     }
+    if payload_vaults:
+        payload["vaults"] = payload_vaults
     payload.update(
         {f"{key}_id": _resource_id(resource, key) for key, resource in resources.items()}
     )
@@ -564,7 +645,7 @@ def _handle_template_create(args: argparse.Namespace, client: SemaphoreClient) -
     result = {
         "project": project,
         "template": {key: created[key] for key in ("id", "project_id", "name")},
-        "configuration": _safe_template_configuration(request, resources),
+        "configuration": _safe_template_configuration(request, resources, safe_vaults),
     }
     if args.as_json:
         _print(result, True)

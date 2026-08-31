@@ -213,6 +213,19 @@ def _schema_properties(document: dict[str, Any], schema: Any) -> dict[str, Any]:
     return result
 
 
+def _is_known_template_schema_extension(field: str, value: Any) -> bool:
+    """Return whether a missing Swagger constraint is a supported extension.
+
+    Semaphore versions can support survey defaults and multi-select variables
+    before their generated Swagger document includes the corresponding nested
+    property or enum value. This intentionally recognizes only those two
+    precise paths; all other absent schema elements remain validation errors.
+    """
+    return field.startswith("survey_vars[") and (
+        field.endswith(".default_value") or (field.endswith(".type") and value == "select")
+    )
+
+
 def _validate_schema_value(document: dict[str, Any], schema: Any, value: Any, field: str) -> None:
     """Confirm that a value's nested fields and enums match a Swagger schema.
 
@@ -239,13 +252,20 @@ def _validate_schema_value(document: dict[str, Any], schema: Any, value: Any, fi
         ``items`` fragment to each element. Passing the complete document is
         necessary when ``TemplateRequest`` uses a local reference or ``allOf``.
     """
-    if isinstance(schema, dict) and isinstance(schema.get("enum"), list) and value not in schema["enum"]:
+    if (
+        isinstance(schema, dict)
+        and isinstance(schema.get("enum"), list)
+        and value not in schema["enum"]
+        and not _is_known_template_schema_extension(field, value)
+    ):
         raise APIError(f"Semaphore API schema does not support {field}={value!r}")
     if isinstance(value, dict):
         properties = _schema_properties(document, schema)
         for key, item in value.items():
             property_schema = properties.get(key)
             if property_schema is None:
+                if _is_known_template_schema_extension(f"{field}.{key}", item):
+                    continue
                 raise APIError(f"Semaphore API schema does not support template field {field}.{key}")
             _validate_schema_value(document, property_schema, item, f"{field}.{key}")
     elif isinstance(value, list) and isinstance(schema, dict) and "items" in schema:
@@ -462,6 +482,16 @@ class SemaphoreClient:
     def find_view(self, project_id: int, name: str) -> dict[str, Any]:
         """Resolve a view by exact project-scoped name."""
         return self._filter_exact(self.list_views(project_id), name, "view")
+
+    def list_access_keys(self, project_id: int) -> list[dict[str, Any]]:
+        """Return access keys available within a project."""
+        return _require_list_of_objects(
+            self._request("GET", f"/api/project/{project_id}/keys?sort=name&order=asc"), "access keys"
+        )
+
+    def find_access_key(self, project_id: int, name: str) -> dict[str, Any]:
+        """Resolve an access key by exact project-scoped name."""
+        return self._filter_exact(self.list_access_keys(project_id), name, "access key")
 
     def list_templates(self, project_id: int) -> list[dict[str, Any]]:
         """Return all task templates in a project.
