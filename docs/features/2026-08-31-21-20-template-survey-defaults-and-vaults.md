@@ -14,7 +14,7 @@ sources:
   - https://raw.githubusercontent.com/semaphoreui/semaphore/develop/db/Template.go
   - https://semaphoreui.com/docs/user-guide/task-templates
   - https://semaphoreui.com/docs/admin-guide/api
-status: completed
+status: in_progress
 ---
 
 # Support Survey Defaults and Vaults in Template Creation
@@ -250,6 +250,23 @@ as `proposed` and must not be implemented until user approval.
 - Validation: `uv lock --check`, `uv run pytest` (43 passed), `uv build`,
   `uv run semaphore-ui --version` (reported `0.4.0`), and `git diff --check`
   passed. Build distributions are validation-only ignored artifacts.
+
+## Amendments
+
+- Add discoverable `template create --help` guidance for nested survey and
+  vault configuration. Add regression coverage for the help text and preserve
+  all command behavior.
+- Correct the environment dependency: `--environment` is optional. When it is
+  omitted, do not look up an environment and submit Semaphore's no-environment
+  representation, `environment_id: 0`. Preserve exact-name resolution when the
+  option is supplied.
+- Replace the request-file-only restriction for nested template configuration
+  with repeatable `--survey-var JSON` and `--vault JSON` options. These objects
+  use the documented `survey_vars` and name-based vault shapes, may be combined
+  with normal create options, and must have the same validation, vault-key
+  resolution, preflight, redaction, help, and README documentation as file
+  input. A request file remains available for reproducible advanced requests
+  but cannot be combined with direct options.
 
 ## Sources
 

@@ -84,8 +84,10 @@ semaphore-ui run \
 ```
 
 Create a task template without running it. The project, repository, inventory,
-environment, and optional view are resolved by exact name before the one
-configuration-changing request is made:
+and optional environment/view are resolved by exact name before the one
+configuration-changing request is made. Omit `--environment` when the project
+has no environments; the CLI sends Semaphore's no-environment value,
+`environment_id: 0`:
 
 ```bash
 semaphore-ui template create \
@@ -98,9 +100,24 @@ semaphore-ui template create \
   --git-branch main
 ```
 
-For survey variables, vaults, or task parameters, use a JSON object with
-name-based resource references. Do not put API tokens, SSH keys, vault
-passwords, vault scripts, or secret survey values in this file:
+Add survey variables and vaults directly with repeatable JSON-object options.
+The `vault_key` is the exact name of an existing project access key, not a
+credential value:
+
+```bash
+semaphore-ui template create \
+  --project configuration_management \
+  --name deploy-web \
+  --repository configuration-management \
+  --inventory homelab \
+  --playbook deploy.yml \
+  --survey-var '{"name":"target","title":"Target","type":"","default_value":"web-01"}' \
+  --vault '{"name":"production","type":"password","vault_key":"Production vault password"}'
+```
+
+For reproducible advanced requests, `--file` accepts the same JSON object.
+Do not put API tokens, SSH keys, vault passwords, vault scripts, or secret
+survey values in that file:
 
 ```json
 {
@@ -128,11 +145,11 @@ semaphore-ui template create --project configuration_management --file template.
 The request file accepts `name`, `repository`, `inventory`, `environment`, and
 `playbook` (all required); plus `description`, `git_branch`, `type` (`""`,
 `build`, or `deploy`), `arguments`, `survey_vars`, `vaults`, `task_params`, and
-`view`. Survey defaults may be strings, or string arrays for `select` variables;
-they cannot be used with `secret` variables. A vault's optional `vault_key` is
-the exact name of an existing project access key and is converted to its ID; it
-is never credential input. It cannot be combined with direct template options.
-The `--json` result contains the created template and only safe effective
+`view`. The direct `--survey-var JSON` and `--vault JSON` options may be
+repeated and cannot be combined with `--file`. Survey defaults may be strings,
+or string arrays for `select` variables; they cannot be used with `secret`
+variables. A vault's optional `vault_key` is converted to its ID and is never
+credential input. The `--json` result contains the created template and only safe effective
 configuration; it deliberately omits arguments, survey values/defaults, vault
 scripts, and task parameters. Template creation persists configuration but does
 not execute a playbook. The token must have permission to create templates and

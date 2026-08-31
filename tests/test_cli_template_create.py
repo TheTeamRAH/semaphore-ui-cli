@@ -56,6 +56,19 @@ class FakeClient:
         self.schema_checked = True
 
 
+def test_template_create_help_identifies_nested_request_file_capabilities(capsys):
+    try:
+        cli.main(["template", "create", "--help"])
+    except SystemExit as exc:
+        assert exc.code == 0
+
+    help_text = capsys.readouterr().out
+    assert "survey_vars[].default_value" in help_text
+    assert "vaults" in help_text
+    assert "--survey-var JSON" in help_text
+    assert "--vault JSON" in help_text
+
+
 def test_template_create_resolves_names_and_prints_safe_json(monkeypatch, capsys):
     monkeypatch.setattr(cli, "_client", lambda insecure=False: FakeClient())
 
@@ -197,6 +210,48 @@ def test_template_create_preserves_defaults_and_resolves_vault_keys(monkeypatch,
         {"key": {"id": 6, "name": "Production vault password"}, "name": "production", "type": "password"}
     ]
     assert "default_value" not in json.dumps(output)
+
+
+def test_template_create_accepts_direct_nested_options_without_environment(monkeypatch, capsys):
+    class NoEnvironmentClient(FakeClient):
+        def find_environment(self, project_id, name):
+            raise AssertionError("environment lookup must not occur")
+
+        def create_template(self, project_id, payload):
+            assert project_id == 1
+            assert payload["environment_id"] == 0
+            assert payload["survey_vars"] == [
+                {"name": "target", "title": "Target", "type": "", "default_value": "web-01"}
+            ]
+            assert payload["vaults"] == [
+                {"name": "production", "type": "password", "vault_key_id": 6}
+            ]
+            return {"id": 5, "project_id": 1, "name": payload["name"]}
+
+    monkeypatch.setattr(cli, "_client", lambda insecure=False: NoEnvironmentClient())
+
+    assert cli.main(
+        [
+            "template",
+            "create",
+            "--project",
+            "configuration_management",
+            "--name",
+            "show-firewall-interface",
+            "--repository",
+            "configuration-management",
+            "--inventory",
+            "homelab",
+            "--playbook",
+            "site.yml",
+            "--survey-var",
+            '{"name":"target","title":"Target","type":"","default_value":"web-01"}',
+            "--vault",
+            '{"name":"production","type":"password","vault_key":"Production vault password"}',
+            "--json",
+        ]
+    ) == 0
+    assert "default_value" not in capsys.readouterr().out
 
 
 def test_template_create_rejects_secret_survey_default_before_api_lookup(monkeypatch, tmp_path):

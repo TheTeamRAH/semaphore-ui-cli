@@ -166,7 +166,7 @@ _TEMPLATE_FIELDS = {
     "view",
     "vaults",
 }
-_TEMPLATE_REQUIRED_FIELDS = {"name", "repository", "inventory", "environment", "playbook"}
+_TEMPLATE_REQUIRED_FIELDS = {"name", "repository", "inventory", "playbook"}
 _SURVEY_TYPES = {"", "int", "enum", "secret", "text", "select"}
 _SURVEY_TARGETS = {"", "env"}
 _SURVEY_FIELDS = {"name", "title", "description", "type", "target", "required", "values", "default_value"}
@@ -474,6 +474,10 @@ def _validate_template_request(request: dict[str, Any]) -> dict[str, Any]:
     for field in ("description", "git_branch", "arguments", "view"):
         if field in result and not isinstance(result[field], str):
             raise ValueError(f"template {field} must be a string")
+    if "environment" in result:
+        result["environment"] = require_nonempty_string(
+            result["environment"], ValueError, "template environment must be a non-empty string"
+        )
     template_type = result.get("type", "")
     if template_type not in {"", "build", "deploy"}:
         raise ValueError("template type must be one of: default, build, deploy")
@@ -484,6 +488,20 @@ def _validate_template_request(request: dict[str, Any]) -> dict[str, Any]:
         result["task_params"] = _validate_task_params(result["task_params"])
     if "vaults" in result:
         result["vaults"] = _validate_vaults(result["vaults"])
+    return result
+
+
+def _inline_json_objects(values: list[str], option: str) -> list[dict[str, Any]]:
+    """Decode repeated JSON-object command-line options without reading a file."""
+    result = []
+    for value in values:
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{option} must be valid JSON: {exc.msg}") from exc
+        if not isinstance(decoded, dict):
+            raise ValueError(f"{option} must contain a JSON object")
+        result.append(decoded)
     return result
 
 
@@ -512,6 +530,9 @@ def _template_request_from_args(args: argparse.Namespace) -> dict[str, Any]:
         for field in _TEMPLATE_FIELDS
         if getattr(args, field, None) is not None
     }
+    for field, option in (("survey_vars", "--survey-var"), ("vaults", "--vault")):
+        if field in direct:
+            direct[field] = _inline_json_objects(direct[field], option)
     if direct.get("type") == "default":
         direct["type"] = ""
     if args.file:
@@ -555,8 +576,14 @@ def _safe_template_configuration(
     """
     configuration = {
         key: {"id": resources[key]["id"], "name": resources[key]["name"]}
-        for key in ("repository", "inventory", "environment")
+        for key in ("repository", "inventory")
     }
+    if "environment" in resources:
+        configuration["environment"] = {
+            "id": resources["environment"]["id"], "name": resources["environment"]["name"]
+        }
+    else:
+        configuration["environment"] = {"id": 0}
     for field in ("playbook", "description", "git_branch", "type"):
         if field in request:
             configuration[field] = request[field]
@@ -624,8 +651,9 @@ def _handle_template_create(args: argparse.Namespace, client: SemaphoreClient) -
     resources = {
         "repository": client.find_repository(project_id, request["repository"]),
         "inventory": client.find_inventory(project_id, request["inventory"]),
-        "environment": client.find_environment(project_id, request["environment"]),
     }
+    if "environment" in request:
+        resources["environment"] = client.find_environment(project_id, request["environment"])
     if "view" in request:
         resources["view"] = client.find_view(project_id, request["view"])
     payload_vaults, safe_vaults = _resolve_vaults(client, project_id, request.get("vaults", []))
@@ -639,6 +667,7 @@ def _handle_template_create(args: argparse.Namespace, client: SemaphoreClient) -
     payload.update(
         {f"{key}_id": _resource_id(resource, key) for key, resource in resources.items()}
     )
+    payload.setdefault("environment_id", 0)
     payload["project_id"] = project_id
     client.assert_template_create_supported(payload)
     created = client.create_template(project_id, payload)
@@ -859,11 +888,19 @@ def build_parser() -> argparse.ArgumentParser:
     template_sub = template.add_subparsers(dest="template_command", required=True)
     create = template_sub.add_parser("create", help="create a template without running it")
     create.add_argument("--project", required=True, help="exact project name")
-    create.add_argument("--file", help="JSON request file; cannot be combined with template options")
+    create.add_argument(
+        "--file",
+        help=(
+            "JSON request file for nested survey_vars[].default_value, vaults, and task_params; "
+            "cannot be combined with template options"
+        ),
+    )
+    create.add_argument("--survey-var", action="append", dest="survey_vars", metavar="JSON", help="survey variable JSON object; repeatable")
+    create.add_argument("--vault", action="append", dest="vaults", metavar="JSON", help="vault JSON object; repeatable")
     create.add_argument("--name")
     create.add_argument("--repository", help="exact repository name in the project")
     create.add_argument("--inventory", help="exact inventory name in the project")
-    create.add_argument("--environment", help="exact environment name in the project")
+    create.add_argument("--environment", help="exact environment name in the project; omit for no environment")
     create.add_argument("--playbook", help="playbook path in the selected repository")
     create.add_argument("--description")
     create.add_argument("--git-branch")
