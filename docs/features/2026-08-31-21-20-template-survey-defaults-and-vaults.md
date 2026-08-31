@@ -14,7 +14,7 @@ sources:
   - https://raw.githubusercontent.com/semaphoreui/semaphore/develop/db/Template.go
   - https://semaphoreui.com/docs/user-guide/task-templates
   - https://semaphoreui.com/docs/admin-guide/api
-status: in_progress
+status: completed
 ---
 
 # Support Survey Defaults and Vaults in Template Creation
