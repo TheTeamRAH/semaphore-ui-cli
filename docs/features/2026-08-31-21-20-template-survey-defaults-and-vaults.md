@@ -296,6 +296,13 @@ scope must not be implemented until the revised specification is approved.
   `uv run semaphore-ui template create --help`, `uv build`,
   `uv run semaphore-ui --version` (reported `0.4.2`), and `git diff --check`
   passed. Build distributions are validation-only ignored artifacts.
+- Ansible-app amendment release: updated and passed (patch). The end-to-end
+  correction explicitly selects Ansible, changing version `0.4.2` to `0.4.3`.
+  `pyproject.toml` remains authoritative and `uv.lock` was regenerated. After
+  local-main synchronization reported `Already up to date.`, `uv lock --check`,
+  `uv run pytest` (47 passed), `uv build`, `uv run semaphore-ui --version`
+  (reported `0.4.3`), and `git diff --check` passed. Build distributions are
+  validation-only ignored artifacts.
 
 ## Amendments
 
