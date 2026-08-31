@@ -171,40 +171,82 @@ _SURVEY_TARGETS = {"", "env"}
 _SURVEY_FIELDS = {"name", "title", "description", "type", "target", "required", "values"}
 
 
-def _validate_survey_vars(value: Any) -> list[dict[str, Any]]:
-    """Validate the supported non-secret portion of survey-variable configuration.
+def _is_named_string_value(value: Any) -> bool:
+    """Return whether one survey option has only string name and value fields.
 
     Args:
-        value: Survey variable array from a template request.
+        value: Candidate survey-variable option.
 
     Returns:
-        The validated survey variable objects.
-
-    Raises:
-        ValueError: If a survey variable has an unsupported shape or secret value.
+        True when the candidate has the supported object shape.
     """
-    if not isinstance(value, list):
-        raise ValueError("template survey_vars must be a list")
-    return [_validate_survey_var(item, index) for index, item in enumerate(value)]
+    if not isinstance(value, dict) or set(value) - {"name", "value"}:
+        return False
+    return isinstance(value.get("name"), str) and isinstance(value.get("value"), str)
 
 
-def _validate_survey_var(value: Any, index: int) -> dict[str, Any]:
-    """Validate one survey-variable object.
+def _are_named_string_values(value: Any) -> bool:
+    """Return whether survey values have the supported name/value object shape.
 
     Args:
-        value: Candidate survey-variable object.
+        value: Candidate survey-variable options from the request file.
+
+    Returns:
+        True when every option has only non-empty string ``name`` and ``value`` fields.
+    """
+    return isinstance(value, list) and all(_is_named_string_value(option) for option in value)
+
+
+def _validate_survey_values(item: dict[str, Any], index: int) -> None:
+    """Validate non-secret named options for one survey variable.
+
+    Args:
+        item: Typed survey-variable mapping that contains ``values``.
         index: Zero-based position used in validation messages.
 
-    Returns:
-        The validated survey-variable object.
+    Raises:
+        ValueError: If a secret variable supplies values or the option shape is invalid.
+    """
+    if item.get("type") == "secret":
+        raise ValueError("template secret survey variables cannot include values")
+    if not _are_named_string_values(item["values"]):
+        raise ValueError(f"template survey_vars[{index}].values must be name/value objects")
+
+
+def _validate_survey_choice(
+    item: dict[str, Any], field: str, supported_values: set[str], index: int
+) -> None:
+    """Validate one optional survey field against its supported values.
+
+    Args:
+        item: Typed survey-variable mapping.
+        field: Optional survey field to validate.
+        supported_values: Values accepted for the field.
+        index: Zero-based position used in validation messages.
 
     Raises:
-        ValueError: If a field is malformed, unsupported, or exposes a secret.
+        ValueError: If the field is present with an unsupported value.
     """
-    item = _require_survey_object(value, index)
-    _validate_survey_identity(item, index)
-    _validate_survey_options(item, index)
-    return item
+    if item.get(field, "") not in supported_values:
+        raise ValueError(f"template survey_vars[{index}].{field} is unsupported")
+
+
+def _validate_survey_identity(item: dict[str, Any], index: int) -> None:
+    """Validate a survey variable's required identity and descriptive fields.
+
+    Args:
+        item: Typed survey-variable mapping.
+        index: Zero-based position used in validation messages.
+
+    Raises:
+        ValueError: If required strings or description are invalid.
+    """
+    for field in ("name", "title"):
+        require_nonempty_string(
+            item.get(field), ValueError, f"template survey_vars[{index}].{field} must be a non-empty string"
+        )
+    if "description" in item and not isinstance(item["description"], str):
+        raise ValueError(f"template survey_vars[{index}].description must be a string")
 
 
 def _require_survey_object(value: Any, index: int) -> dict[str, Any]:
@@ -227,24 +269,6 @@ def _require_survey_object(value: Any, index: int) -> dict[str, Any]:
     return value
 
 
-def _validate_survey_identity(item: dict[str, Any], index: int) -> None:
-    """Validate a survey variable's required identity and descriptive fields.
-
-    Args:
-        item: Typed survey-variable mapping.
-        index: Zero-based position used in validation messages.
-
-    Raises:
-        ValueError: If required strings or description are invalid.
-    """
-    for field in ("name", "title"):
-        require_nonempty_string(
-            item.get(field), ValueError, f"template survey_vars[{index}].{field} must be a non-empty string"
-        )
-    if "description" in item and not isinstance(item["description"], str):
-        raise ValueError(f"template survey_vars[{index}].description must be a string")
-
-
 def _validate_survey_options(item: dict[str, Any], index: int) -> None:
     """Validate a survey variable's type, target, required flag, and options.
 
@@ -263,64 +287,70 @@ def _validate_survey_options(item: dict[str, Any], index: int) -> None:
         _validate_survey_values(item, index)
 
 
-def _validate_survey_choice(
-    item: dict[str, Any], field: str, supported_values: set[str], index: int
-) -> None:
-    """Validate one optional survey field against its supported values.
+def _validate_survey_var(value: Any, index: int) -> dict[str, Any]:
+    """Validate one survey-variable object.
 
     Args:
-        item: Typed survey-variable mapping.
-        field: Optional survey field to validate.
-        supported_values: Values accepted for the field.
+        value: Candidate survey-variable object.
         index: Zero-based position used in validation messages.
 
-    Raises:
-        ValueError: If the field is present with an unsupported value.
-    """
-    if item.get(field, "") not in supported_values:
-        raise ValueError(f"template survey_vars[{index}].{field} is unsupported")
-
-
-def _validate_survey_values(item: dict[str, Any], index: int) -> None:
-    """Validate non-secret named options for one survey variable.
-
-    Args:
-        item: Typed survey-variable mapping that contains ``values``.
-        index: Zero-based position used in validation messages.
+    Returns:
+        The validated survey-variable object.
 
     Raises:
-        ValueError: If a secret variable supplies values or the option shape is invalid.
+        ValueError: If a field is malformed, unsupported, or exposes a secret.
     """
-    if item.get("type") == "secret":
-        raise ValueError("template secret survey variables cannot include values")
-    if not _are_named_string_values(item["values"]):
-        raise ValueError(f"template survey_vars[{index}].values must be name/value objects")
+    item = _require_survey_object(value, index)
+    _validate_survey_identity(item, index)
+    _validate_survey_options(item, index)
+    return item
 
 
-def _are_named_string_values(value: Any) -> bool:
-    """Return whether survey values have the supported name/value object shape.
+def _validate_survey_vars(value: Any) -> list[dict[str, Any]]:
+    """Validate the supported non-secret portion of survey-variable configuration.
 
     Args:
-        value: Candidate survey-variable options from the request file.
+        value: Survey variable array from a template request.
 
     Returns:
-        True when every option has only non-empty string ``name`` and ``value`` fields.
+        The validated survey variable objects.
+
+    Raises:
+        ValueError: If a survey variable has an unsupported shape or secret value.
     """
-    return isinstance(value, list) and all(_is_named_string_value(option) for option in value)
+    if not isinstance(value, list):
+        raise ValueError("template survey_vars must be a list")
+    return [_validate_survey_var(item, index) for index, item in enumerate(value)]
 
 
-def _is_named_string_value(value: Any) -> bool:
-    """Return whether one survey option has only string name and value fields.
+def _contains_non_boolean(values: dict[str, Any], fields: set[str]) -> bool:
+    """Return whether any selected field is present with a non-boolean value.
 
     Args:
-        value: Candidate survey-variable option.
+        values: Candidate parameter mapping.
+        fields: Keys whose values must be booleans.
 
     Returns:
-        True when the candidate has the supported object shape.
+        True when a present selected field is not a boolean.
     """
-    if not isinstance(value, dict) or set(value) - {"name", "value"}:
-        return False
-    return isinstance(value.get("name"), str) and isinstance(value.get("value"), str)
+    return any(field in values and not isinstance(values[field], bool) for field in fields)
+
+
+def _contains_non_string_list(values: dict[str, Any], fields: set[str]) -> bool:
+    """Return whether any selected field is present with a non-string-list value.
+
+    Args:
+        values: Candidate parameter mapping.
+        fields: Keys whose values must be lists of strings.
+
+    Returns:
+        True when a present selected field is not a string list.
+    """
+    return any(
+        field in values
+        and (not isinstance(values[field], list) or not all(isinstance(item, str) for item in values[field]))
+        for field in fields
+    )
 
 
 def _validate_task_params(value: Any) -> dict[str, Any]:
@@ -352,36 +382,6 @@ def _validate_task_params(value: Any) -> dict[str, Any]:
         if _contains_non_string_list(params, list_fields):
             raise ValueError("template task_params.params list values must be string lists")
     return value
-
-
-def _contains_non_boolean(values: dict[str, Any], fields: set[str]) -> bool:
-    """Return whether any selected field is present with a non-boolean value.
-
-    Args:
-        values: Candidate parameter mapping.
-        fields: Keys whose values must be booleans.
-
-    Returns:
-        True when a present selected field is not a boolean.
-    """
-    return any(field in values and not isinstance(values[field], bool) for field in fields)
-
-
-def _contains_non_string_list(values: dict[str, Any], fields: set[str]) -> bool:
-    """Return whether any selected field is present with a non-string-list value.
-
-    Args:
-        values: Candidate parameter mapping.
-        fields: Keys whose values must be lists of strings.
-
-    Returns:
-        True when a present selected field is not a string list.
-    """
-    return any(
-        field in values
-        and (not isinstance(values[field], list) or not all(isinstance(item, str) for item in values[field]))
-        for field in fields
-    )
 
 
 def _validate_template_request(request: dict[str, Any]) -> dict[str, Any]:

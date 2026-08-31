@@ -185,6 +185,15 @@ The API documentation identifies `TemplateRequest` fields including `project_id`
 
 ## Amendments
 
+- Preserve helper-first function order throughout the Python package: a
+  module-level private helper must appear before any other module-level function
+  that calls it, except for direct recursion. Add a structural regression test
+  covering the package modules and reorder the existing CLI validation helpers
+  without changing their public behavior, validation rules, error messages, or
+  output. Continue to reserve `validators.py` for context-free contracts shared
+  across layers; CLI request-shape validation and API response/schema validation
+  remain in their owning modules because their dependencies, error domains, and
+  policy are layer-specific.
 - Correct the prematurely completed release closeout: update the README's
   release-facing `--version` output to `0.3.0` and add regression coverage that
   compares that documented output with the authoritative package version.
