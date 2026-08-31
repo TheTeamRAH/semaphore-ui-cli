@@ -44,6 +44,19 @@ class LookupError(SemaphoreError):
 class APIError(SemaphoreError):
     """The Semaphore API returned an error or unusable response."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        method: str | None = None,
+        path: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.method = method
+        self.path = path
+
 
 class TaskTimeoutError(SemaphoreError):
     """A task did not reach a terminal state in time."""
@@ -213,6 +226,17 @@ def _schema_properties(document: dict[str, Any], schema: Any) -> dict[str, Any]:
     return result
 
 
+def _is_known_template_schema_extension(field: str, value: Any) -> bool:
+    """Return whether a missing Swagger constraint is a supported extension.
+
+    Semaphore versions can support survey defaults and multi-select variables
+    before their generated Swagger document includes the corresponding nested
+    property or enum value. This intentionally recognizes only those two
+    precise paths; all other absent schema elements remain validation errors.
+    """
+    return field.startswith("survey_vars[") and field.endswith(".type") and value == "select"
+
+
 def _validate_schema_value(document: dict[str, Any], schema: Any, value: Any, field: str) -> None:
     """Confirm that a value's nested fields and enums match a Swagger schema.
 
@@ -239,13 +263,20 @@ def _validate_schema_value(document: dict[str, Any], schema: Any, value: Any, fi
         ``items`` fragment to each element. Passing the complete document is
         necessary when ``TemplateRequest`` uses a local reference or ``allOf``.
     """
-    if isinstance(schema, dict) and isinstance(schema.get("enum"), list) and value not in schema["enum"]:
+    if (
+        isinstance(schema, dict)
+        and isinstance(schema.get("enum"), list)
+        and value not in schema["enum"]
+        and not _is_known_template_schema_extension(field, value)
+    ):
         raise APIError(f"Semaphore API schema does not support {field}={value!r}")
     if isinstance(value, dict):
         properties = _schema_properties(document, schema)
         for key, item in value.items():
             property_schema = properties.get(key)
             if property_schema is None:
+                if field.startswith("survey_vars[") and key == "default_value":
+                    continue
                 raise APIError(f"Semaphore API schema does not support template field {field}.{key}")
             _validate_schema_value(document, property_schema, item, f"{field}.{key}")
     elif isinstance(value, list) and isinstance(schema, dict) and "items" in schema:
@@ -376,7 +407,12 @@ class SemaphoreClient:
             with self._opener(request, **kwargs) as response:
                 raw = response.read()
         except HTTPError as exc:
-            raise APIError(f"Semaphore API returned HTTP {exc.code} for {method} {path}") from exc
+            raise APIError(
+                f"Semaphore API returned HTTP {exc.code} for {method} {path}",
+                status_code=exc.code,
+                method=method,
+                path=path,
+            ) from exc
         except (URLError, TimeoutError, OSError) as exc:
             reason = getattr(exc, "reason", str(exc))
             raise APIError(f"Unable to reach Semaphore API: {reason}") from exc
@@ -463,6 +499,16 @@ class SemaphoreClient:
         """Resolve a view by exact project-scoped name."""
         return self._filter_exact(self.list_views(project_id), name, "view")
 
+    def list_access_keys(self, project_id: int) -> list[dict[str, Any]]:
+        """Return access keys available within a project."""
+        return _require_list_of_objects(
+            self._request("GET", f"/api/project/{project_id}/keys?sort=name&order=asc"), "access keys"
+        )
+
+    def find_access_key(self, project_id: int, name: str) -> dict[str, Any]:
+        """Resolve an access key by exact project-scoped name."""
+        return self._filter_exact(self.list_access_keys(project_id), name, "access key")
+
     def list_templates(self, project_id: int) -> list[dict[str, Any]]:
         """Return all task templates in a project.
 
@@ -516,9 +562,15 @@ class SemaphoreClient:
             payload: Fully resolved JSON payload that will be posted.
 
         Raises:
-            APIError: If the schema is unavailable, malformed, or incompatible.
+            APIError: If the schema is malformed or incompatible, or if a
+                preflight request other than a missing Swagger endpoint fails.
         """
-        schema = self._request("GET", "/api/swagger")
+        try:
+            schema = self._request("GET", "/api/swagger")
+        except APIError as exc:
+            if exc.status_code == 404 and exc.method == "GET" and exc.path == "/api/swagger":
+                return
+            raise
         if not isinstance(schema, dict):
             raise APIError("Semaphore API schema was not a JSON object")
         paths = schema.get("paths")

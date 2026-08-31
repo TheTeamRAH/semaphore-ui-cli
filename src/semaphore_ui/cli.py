@@ -28,7 +28,7 @@ import json
 import re
 import sys
 import time
-from typing import Any, Callable
+from typing import Any
 
 from . import __version__
 from .api import SemaphoreClient, SemaphoreError, TERMINAL_STATES, TaskTimeoutError
@@ -164,11 +164,15 @@ _TEMPLATE_FIELDS = {
     "survey_vars",
     "task_params",
     "view",
+    "vaults",
 }
-_TEMPLATE_REQUIRED_FIELDS = {"name", "repository", "inventory", "environment", "playbook"}
-_SURVEY_TYPES = {"", "int", "enum", "secret", "text"}
+_TEMPLATE_REQUIRED_FIELDS = {"name", "repository", "inventory", "playbook"}
+_DEFAULT_TEMPLATE_APP = "ansible"
+_SURVEY_TYPES = {"", "int", "enum", "secret", "text", "select"}
 _SURVEY_TARGETS = {"", "env"}
-_SURVEY_FIELDS = {"name", "title", "description", "type", "target", "required", "values"}
+_SURVEY_FIELDS = {"name", "title", "description", "type", "target", "required", "values", "default_value"}
+_VAULT_FIELDS = {"name", "type", "vault_key", "script"}
+_VAULT_TYPES = {"password", "script"}
 
 
 def _is_named_string_value(value: Any) -> bool:
@@ -211,6 +215,30 @@ def _validate_survey_values(item: dict[str, Any], index: int) -> None:
         raise ValueError("template secret survey variables cannot include values")
     if not _are_named_string_values(item["values"]):
         raise ValueError(f"template survey_vars[{index}].values must be name/value objects")
+
+
+def _validate_survey_default(item: dict[str, Any], index: int) -> None:
+    """Validate a non-secret survey default and its type-specific constraints."""
+    if "default_value" not in item:
+        return
+    default = item["default_value"]
+    if isinstance(default, list):
+        if not all(isinstance(value, str) for value in default):
+            raise ValueError(f"template survey_vars[{index}].default_value must contain only strings")
+        if item.get("type") != "select":
+            raise ValueError(f"template survey_vars[{index}].default_value list requires type select")
+        defaults = default
+    elif isinstance(default, str):
+        defaults = [default]
+    else:
+        raise ValueError(f"template survey_vars[{index}].default_value must be a string or string list")
+    if item.get("type") == "secret":
+        raise ValueError("template secret survey variables cannot include default_value")
+    if item.get("type") in {"enum", "select"}:
+        values = item.get("values", [])
+        allowed = {value.get("value") for value in values if isinstance(value, dict)}
+        if any(default_value not in allowed for default_value in defaults):
+            raise ValueError(f"template survey_vars[{index}].default_value must be in values")
 
 
 def _validate_survey_choice(
@@ -285,6 +313,7 @@ def _validate_survey_options(item: dict[str, Any], index: int) -> None:
         raise ValueError(f"template survey_vars[{index}].required must be a boolean")
     if "values" in item:
         _validate_survey_values(item, index)
+    _validate_survey_default(item, index)
 
 
 def _validate_survey_var(value: Any, index: int) -> dict[str, Any]:
@@ -321,6 +350,31 @@ def _validate_survey_vars(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         raise ValueError("template survey_vars must be a list")
     return [_validate_survey_var(item, index) for index, item in enumerate(value)]
+
+
+def _validate_vaults(value: Any) -> list[dict[str, Any]]:
+    """Validate name-based vault configuration without accepting credentials."""
+    if not isinstance(value, list):
+        raise ValueError("template vaults must be a list")
+    result = []
+    for index, vault in enumerate(value):
+        if not isinstance(vault, dict) or set(vault) - _VAULT_FIELDS:
+            raise ValueError(f"template vaults[{index}] has unsupported fields")
+        item = dict(vault)
+        item["name"] = require_nonempty_string(
+            item.get("name"), ValueError, f"template vaults[{index}].name must be a non-empty string"
+        )
+        if item.get("type") not in _VAULT_TYPES:
+            raise ValueError(f"template vaults[{index}].type is unsupported")
+        for field in ("vault_key", "script"):
+            if field in item:
+                item[field] = require_nonempty_string(
+                    item[field], ValueError, f"template vaults[{index}].{field} must be a non-empty string"
+                )
+        if "script" in item and item["type"] != "script":
+            raise ValueError(f"template vaults[{index}].script requires type script")
+        result.append(item)
+    return result
 
 
 def _contains_non_boolean(values: dict[str, Any], fields: set[str]) -> bool:
@@ -421,6 +475,10 @@ def _validate_template_request(request: dict[str, Any]) -> dict[str, Any]:
     for field in ("description", "git_branch", "arguments", "view"):
         if field in result and not isinstance(result[field], str):
             raise ValueError(f"template {field} must be a string")
+    if "environment" in result:
+        result["environment"] = require_nonempty_string(
+            result["environment"], ValueError, "template environment must be a non-empty string"
+        )
     template_type = result.get("type", "")
     if template_type not in {"", "build", "deploy"}:
         raise ValueError("template type must be one of: default, build, deploy")
@@ -429,6 +487,22 @@ def _validate_template_request(request: dict[str, Any]) -> dict[str, Any]:
         result["survey_vars"] = _validate_survey_vars(result["survey_vars"])
     if "task_params" in result:
         result["task_params"] = _validate_task_params(result["task_params"])
+    if "vaults" in result:
+        result["vaults"] = _validate_vaults(result["vaults"])
+    return result
+
+
+def _inline_json_objects(values: list[str], option: str) -> list[dict[str, Any]]:
+    """Decode repeated JSON-object command-line options without reading a file."""
+    result = []
+    for value in values:
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{option} must be valid JSON: {exc.msg}") from exc
+        if not isinstance(decoded, dict):
+            raise ValueError(f"{option} must contain a JSON object")
+        result.append(decoded)
     return result
 
 
@@ -457,6 +531,9 @@ def _template_request_from_args(args: argparse.Namespace) -> dict[str, Any]:
         for field in _TEMPLATE_FIELDS
         if getattr(args, field, None) is not None
     }
+    for field, option in (("survey_vars", "--survey-var"), ("vaults", "--vault")):
+        if field in direct:
+            direct[field] = _inline_json_objects(direct[field], option)
     if direct.get("type") == "default":
         direct["type"] = ""
     if args.file:
@@ -475,7 +552,9 @@ def _template_request_from_args(args: argparse.Namespace) -> dict[str, Any]:
     return _validate_template_request(direct)
 
 
-def _safe_template_configuration(request: dict[str, Any], resources: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _safe_template_configuration(
+    request: dict[str, Any], resources: dict[str, dict[str, Any]], vaults: list[dict[str, Any]]
+) -> dict[str, Any]:
     """Return stable, non-secret configuration safe for command output.
 
     Args:
@@ -498,13 +577,22 @@ def _safe_template_configuration(request: dict[str, Any], resources: dict[str, d
     """
     configuration = {
         key: {"id": resources[key]["id"], "name": resources[key]["name"]}
-        for key in ("repository", "inventory", "environment")
+        for key in ("repository", "inventory")
     }
+    if "environment" in resources:
+        configuration["environment"] = {
+            "id": resources["environment"]["id"], "name": resources["environment"]["name"]
+        }
+    else:
+        configuration["environment"] = {"id": 0}
     for field in ("playbook", "description", "git_branch", "type"):
         if field in request:
             configuration[field] = request[field]
+    configuration["app"] = _DEFAULT_TEMPLATE_APP
     if "view" in resources:
         configuration["view"] = {"id": resources["view"]["id"], "name": resources["view"]["name"]}
+    if vaults:
+        configuration["vaults"] = vaults
     return configuration
 
 
@@ -524,6 +612,25 @@ def _resource_id(resource: dict[str, Any], resource_name: str) -> int:
     return require_positive_int(
         resource.get("id"), ValueError, f"resolved {resource_name} did not contain a positive id"
     )
+
+
+def _resolve_vaults(
+    client: SemaphoreClient, project_id: int, vaults: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Resolve vault-key names into API payload and output-safe vault entries."""
+    payload_vaults = []
+    safe_vaults = []
+    for vault in vaults:
+        payload_vault = {key: value for key, value in vault.items() if key != "vault_key"}
+        safe_vault = {key: vault[key] for key in ("name", "type")}
+        if "vault_key" in vault:
+            key = client.find_access_key(project_id, vault["vault_key"])
+            safe_key = {"id": _resource_id(key, "vault access key"), "name": key["name"]}
+            payload_vault["vault_key_id"] = safe_key["id"]
+            safe_vault["key"] = safe_key
+        payload_vaults.append(payload_vault)
+        safe_vaults.append(safe_vault)
+    return payload_vaults, safe_vaults
 
 
 def _handle_template_create(args: argparse.Namespace, client: SemaphoreClient) -> int:
@@ -546,25 +653,31 @@ def _handle_template_create(args: argparse.Namespace, client: SemaphoreClient) -
     resources = {
         "repository": client.find_repository(project_id, request["repository"]),
         "inventory": client.find_inventory(project_id, request["inventory"]),
-        "environment": client.find_environment(project_id, request["environment"]),
     }
+    if "environment" in request:
+        resources["environment"] = client.find_environment(project_id, request["environment"])
     if "view" in request:
         resources["view"] = client.find_view(project_id, request["view"])
+    payload_vaults, safe_vaults = _resolve_vaults(client, project_id, request.get("vaults", []))
     payload = {
         key: value
         for key, value in request.items()
-        if key not in {"repository", "inventory", "environment", "view"}
+        if key not in {"repository", "inventory", "environment", "view", "vaults"}
     }
+    if payload_vaults:
+        payload["vaults"] = payload_vaults
     payload.update(
         {f"{key}_id": _resource_id(resource, key) for key, resource in resources.items()}
     )
+    payload.setdefault("environment_id", 0)
     payload["project_id"] = project_id
+    payload["app"] = _DEFAULT_TEMPLATE_APP
     client.assert_template_create_supported(payload)
     created = client.create_template(project_id, payload)
     result = {
         "project": project,
         "template": {key: created[key] for key in ("id", "project_id", "name")},
-        "configuration": _safe_template_configuration(request, resources),
+        "configuration": _safe_template_configuration(request, resources, safe_vaults),
     }
     if args.as_json:
         _print(result, True)
@@ -778,11 +891,19 @@ def build_parser() -> argparse.ArgumentParser:
     template_sub = template.add_subparsers(dest="template_command", required=True)
     create = template_sub.add_parser("create", help="create a template without running it")
     create.add_argument("--project", required=True, help="exact project name")
-    create.add_argument("--file", help="JSON request file; cannot be combined with template options")
+    create.add_argument(
+        "--file",
+        help=(
+            "JSON request file for nested survey_vars[].default_value, vaults, and task_params; "
+            "cannot be combined with template options"
+        ),
+    )
+    create.add_argument("--survey-var", action="append", dest="survey_vars", metavar="JSON", help="survey variable JSON object; repeatable")
+    create.add_argument("--vault", action="append", dest="vaults", metavar="JSON", help="vault JSON object; repeatable")
     create.add_argument("--name")
     create.add_argument("--repository", help="exact repository name in the project")
     create.add_argument("--inventory", help="exact inventory name in the project")
-    create.add_argument("--environment", help="exact environment name in the project")
+    create.add_argument("--environment", help="exact environment name in the project; omit for no environment")
     create.add_argument("--playbook", help="playbook path in the selected repository")
     create.add_argument("--description")
     create.add_argument("--git-branch")

@@ -1,6 +1,7 @@
 """Tests for creating Semaphore task templates without a live server."""
 
 import json
+from urllib.error import HTTPError
 
 import pytest
 
@@ -98,6 +99,39 @@ def test_template_resource_lookup_rejects_missing_inventory():
         client.find_inventory(1, "missing")
 
 
+def test_access_key_lookup_uses_exact_name_and_required_sorting():
+    client = SemaphoreClient(
+        "https://semaphore.example",
+        "secret",
+        responses={
+            ("GET", "/api/project/1/keys?sort=name&order=asc"): [
+                {"id": 6, "name": "Production vault password"}
+            ]
+        },
+    )
+
+    assert client.find_access_key(1, "Production vault password") == {
+        "id": 6,
+        "name": "Production vault password",
+    }
+
+
+def test_access_key_lookup_rejects_ambiguous_names():
+    client = SemaphoreClient(
+        "https://semaphore.example",
+        "secret",
+        responses={
+            ("GET", "/api/project/1/keys?sort=name&order=asc"): [
+                {"id": 6, "name": "Vault password"},
+                {"id": 7, "name": "Vault password"},
+            ]
+        },
+    )
+
+    with pytest.raises(LookupError, match="Multiple Semaphore access keys"):
+        client.find_access_key(1, "Vault password")
+
+
 def test_template_create_schema_preflight_requires_supported_path_and_payload_fields():
     schema = {
         "paths": {"/project/{project_id}/templates": {"post": {}}},
@@ -151,3 +185,72 @@ def test_template_create_schema_preflight_rejects_malformed_definitions():
 
     with pytest.raises(APIError, match="definitions"):
         client.assert_template_create_supported({"name": "template"})
+
+
+def test_template_create_schema_preflight_allows_missing_swagger_endpoint():
+    def opener(request, timeout, context=None):
+        raise HTTPError(request.full_url, 404, "not found", {}, None)
+
+    client = SemaphoreClient("https://semaphore.example", "secret", opener=opener)
+
+    client.assert_template_create_supported({"name": "template"})
+
+
+def test_template_create_schema_preflight_accepts_known_survey_extensions():
+    schema = {
+        "paths": {"/project/{project_id}/templates": {"post": {}}},
+        "definitions": {
+            "TemplateRequest": {
+                "properties": {
+                    "name": {},
+                    "survey_vars": {"type": "array", "items": {"$ref": "#/definitions/TemplateSurveyVar"}},
+                }
+            },
+            "TemplateSurveyVar": {
+                "properties": {
+                    "name": {},
+                    "title": {},
+                    "type": {"enum": ["", "int", "enum", "secret", "text"]},
+                    "values": {"type": "array", "items": {"$ref": "#/definitions/TemplateSurveyVarValue"}},
+                }
+            },
+            "TemplateSurveyVarValue": {"properties": {"name": {}, "value": {}}},
+        },
+    }
+    client = SemaphoreClient(
+        "https://semaphore.example", "secret", responses={("GET", "/api/swagger"): schema}
+    )
+
+    client.assert_template_create_supported(
+        {
+            "name": "template",
+            "survey_vars": [
+                {
+                    "name": "target",
+                    "title": "Target",
+                    "type": "select",
+                    "values": [{"name": "Web 1", "value": "web-01"}],
+                    "default_value": ["web-01"],
+                }
+            ],
+        }
+    )
+
+    schema["definitions"]["TemplateSurveyVar"]["properties"]["default_value"] = {"enum": ["web-01"]}
+    client.assert_template_create_supported(
+        {
+            "name": "template",
+            "survey_vars": [
+                {"name": "target", "title": "Target", "type": "", "default_value": "web-01"}
+            ],
+        }
+    )
+    with pytest.raises(APIError, match="default_value"):
+        client.assert_template_create_supported(
+            {
+                "name": "template",
+                "survey_vars": [
+                    {"name": "target", "title": "Target", "type": "", "default_value": "web-02"}
+                ],
+            }
+        )
