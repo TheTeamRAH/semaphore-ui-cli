@@ -155,10 +155,12 @@ scripts, and task parameters. Template creation persists configuration but does
 not execute a playbook. The token must have permission to create templates and
 read the referenced project resources; authorization failures return exit status
 `2`. Before creating a template, the CLI checks the target instance's Swagger
-schema at `/api/swagger`; an unavailable, malformed, or incompatible schema
-also returns exit status `2` and prevents the POST. Semaphore's known
-`survey_vars[].default_value` and `select` extensions remain accepted when an
-otherwise compatible instance Swagger document has not yet listed them.
+schema at `/api/swagger` when that endpoint exists. A missing Swagger endpoint
+is supported for older Semaphore instances; malformed or incompatible schemas
+and other preflight errors return exit status `2` and prevent the POST.
+Semaphore's known `survey_vars[].default_value` and `select` extensions remain
+accepted when an otherwise compatible instance Swagger document has not yet
+listed them.
 
 Wait for completion and retrieve output:
 

@@ -1,6 +1,7 @@
 """Tests for creating Semaphore task templates without a live server."""
 
 import json
+from urllib.error import HTTPError
 
 import pytest
 
@@ -184,6 +185,15 @@ def test_template_create_schema_preflight_rejects_malformed_definitions():
 
     with pytest.raises(APIError, match="definitions"):
         client.assert_template_create_supported({"name": "template"})
+
+
+def test_template_create_schema_preflight_allows_missing_swagger_endpoint():
+    def opener(request, timeout, context=None):
+        raise HTTPError(request.full_url, 404, "not found", {}, None)
+
+    client = SemaphoreClient("https://semaphore.example", "secret", opener=opener)
+
+    client.assert_template_create_supported({"name": "template"})
 
 
 def test_template_create_schema_preflight_accepts_known_survey_extensions():

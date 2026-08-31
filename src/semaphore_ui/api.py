@@ -44,6 +44,19 @@ class LookupError(SemaphoreError):
 class APIError(SemaphoreError):
     """The Semaphore API returned an error or unusable response."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        method: str | None = None,
+        path: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.method = method
+        self.path = path
+
 
 class TaskTimeoutError(SemaphoreError):
     """A task did not reach a terminal state in time."""
@@ -394,7 +407,12 @@ class SemaphoreClient:
             with self._opener(request, **kwargs) as response:
                 raw = response.read()
         except HTTPError as exc:
-            raise APIError(f"Semaphore API returned HTTP {exc.code} for {method} {path}") from exc
+            raise APIError(
+                f"Semaphore API returned HTTP {exc.code} for {method} {path}",
+                status_code=exc.code,
+                method=method,
+                path=path,
+            ) from exc
         except (URLError, TimeoutError, OSError) as exc:
             reason = getattr(exc, "reason", str(exc))
             raise APIError(f"Unable to reach Semaphore API: {reason}") from exc
@@ -544,9 +562,15 @@ class SemaphoreClient:
             payload: Fully resolved JSON payload that will be posted.
 
         Raises:
-            APIError: If the schema is unavailable, malformed, or incompatible.
+            APIError: If the schema is malformed or incompatible, or if a
+                preflight request other than a missing Swagger endpoint fails.
         """
-        schema = self._request("GET", "/api/swagger")
+        try:
+            schema = self._request("GET", "/api/swagger")
+        except APIError as exc:
+            if exc.status_code == 404 and exc.method == "GET" and exc.path == "/api/swagger":
+                return
+            raise
         if not isinstance(schema, dict):
             raise APIError("Semaphore API schema was not a JSON object")
         paths = schema.get("paths")

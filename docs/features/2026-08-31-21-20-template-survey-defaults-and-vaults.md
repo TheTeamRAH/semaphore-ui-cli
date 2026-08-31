@@ -14,7 +14,7 @@ sources:
   - https://raw.githubusercontent.com/semaphoreui/semaphore/develop/db/Template.go
   - https://semaphoreui.com/docs/user-guide/task-templates
   - https://semaphoreui.com/docs/admin-guide/api
-status: completed
+status: in_progress
 ---
 
 # Support Survey Defaults and Vaults in Template Creation
@@ -147,7 +147,8 @@ and prevents the create request.
 6. Resolve every supplied `vault_key` only after project resolution and before
    the preflight or create POST. Convert it to `vault_key_id` and omit the
    client-only name reference.
-7. Continue to preflight the target instance's `/api/swagger` before POSTing.
+7. Continue to preflight the target instance's `/api/swagger` before POSTing
+   when the endpoint exists.
    Permit `survey_vars[].default_value` and `survey_vars[].type="select"` as
    the only documented Semaphore extensions when that nested property or enum
    value is absent from Swagger; validate all other payload fields and nested
@@ -155,7 +156,9 @@ and prevents the create request.
    declared constraints normally.
 8. Do not generalize these exceptions: an unrecognized survey field, unrecognized
    vault field, unsupported parent `survey_vars`/`vaults` field, malformed
-   schema, or unavailable schema remains an exit-status-2 failure with no POST.
+   schema, or non-404 preflight failure remains an exit-status-2 failure with no
+   POST. A 404 from exactly `GET /api/swagger` is the documented compatibility
+   case for instances that do not expose the schema endpoint.
 9. Preserve redaction: neither human output nor the stable JSON envelope may
    include survey default values, survey values, arguments, task parameters,
    access-key secret material, or vault scripts. Safe output may include each
@@ -274,6 +277,11 @@ as `proposed` and must not be implemented until user approval.
   resolution, preflight, redaction, help, and README documentation as file
   input. A request file remains available for reproducible advanced requests
   but cannot be combined with direct options.
+- Support Semaphore instances that do not expose `GET /api/swagger`. When that
+  exact preflight endpoint returns HTTP 404, continue to the create request
+  after local validation and named-resource resolution. Preserve schema
+  validation when Swagger is available and preserve failures for all other
+  preflight errors, including malformed schemas and non-404 HTTP responses.
 
 ## Sources
 
