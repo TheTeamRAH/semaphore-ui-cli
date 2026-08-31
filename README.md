@@ -148,8 +148,10 @@ The request file accepts `name`, `repository`, `inventory`, `environment`, and
 `view`. The direct `--survey-var JSON` and `--vault JSON` options may be
 repeated and cannot be combined with `--file`. Survey defaults may be strings,
 or string arrays for `select` variables; they cannot be used with `secret`
-variables. A vault's optional `vault_key` is converted to its ID and is never
-credential input. The `--json` result contains the created template and only safe effective
+variables. Template creation currently supports Ansible only and always sends
+`app: "ansible"`; an `app` value cannot be supplied in the request file or on
+the command line. A vault's optional `vault_key` is converted to its ID and is
+never credential input. The `--json` result contains the created template and only safe effective
 configuration; it deliberately omits arguments, survey values/defaults, vault
 scripts, and task parameters. Template creation persists configuration but does
 not execute a playbook. The token must have permission to create templates and

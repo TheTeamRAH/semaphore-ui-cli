@@ -42,6 +42,7 @@ class FakeClient:
             "environment_id": 4,
             "playbook": "site.yml",
             "type": "",
+            "app": "ansible",
         }
         assert payload.items() >= expected.items()
         return {
@@ -53,6 +54,7 @@ class FakeClient:
 
     def assert_template_create_supported(self, payload):
         assert payload["project_id"] == 1
+        assert payload["app"] == "ansible"
         self.schema_checked = True
 
 
@@ -99,6 +101,7 @@ def test_template_create_resolves_names_and_prints_safe_json(monkeypatch, capsys
     assert output == {
         "configuration": {
             "environment": {"id": 4, "name": "default"},
+            "app": "ansible",
             "git_branch": "main",
             "inventory": {"id": 3, "name": "homelab"},
             "playbook": "site.yml",
@@ -196,6 +199,7 @@ def test_template_create_preserves_defaults_and_resolves_vault_keys(monkeypatch,
     class VaultClient(FakeClient):
         def create_template(self, project_id, payload):
             assert project_id == 1
+            assert payload["app"] == "ansible"
             assert payload["survey_vars"][0]["default_value"] == ["web-01", "web-02"]
             assert payload["vaults"] == [
                 {"name": "production", "type": "password", "vault_key_id": 6}
@@ -209,6 +213,7 @@ def test_template_create_preserves_defaults_and_resolves_vault_keys(monkeypatch,
     assert output["configuration"]["vaults"] == [
         {"key": {"id": 6, "name": "Production vault password"}, "name": "production", "type": "password"}
     ]
+    assert output["configuration"]["app"] == "ansible"
     assert "default_value" not in json.dumps(output)
 
 
@@ -267,6 +272,25 @@ def test_template_create_rejects_secret_survey_default_before_api_lookup(monkeyp
                 "survey_vars": [
                     {"name": "password", "title": "Password", "type": "secret", "default_value": "secret"}
                 ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "_client", lambda insecure=False: object())
+
+    assert cli.main(["template", "create", "--project", "project", "--file", str(request_file)]) == 2
+
+
+def test_template_create_rejects_caller_supplied_app_before_api_lookup(monkeypatch, tmp_path):
+    request_file = tmp_path / "template.json"
+    request_file.write_text(
+        json.dumps(
+            {
+                "name": "template",
+                "repository": "repository",
+                "inventory": "inventory",
+                "playbook": "site.yml",
+                "app": "terraform",
             }
         ),
         encoding="utf-8",

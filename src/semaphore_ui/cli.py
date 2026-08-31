@@ -28,7 +28,7 @@ import json
 import re
 import sys
 import time
-from typing import Any, Callable
+from typing import Any
 
 from . import __version__
 from .api import SemaphoreClient, SemaphoreError, TERMINAL_STATES, TaskTimeoutError
@@ -167,6 +167,7 @@ _TEMPLATE_FIELDS = {
     "vaults",
 }
 _TEMPLATE_REQUIRED_FIELDS = {"name", "repository", "inventory", "playbook"}
+_DEFAULT_TEMPLATE_APP = "ansible"
 _SURVEY_TYPES = {"", "int", "enum", "secret", "text", "select"}
 _SURVEY_TARGETS = {"", "env"}
 _SURVEY_FIELDS = {"name", "title", "description", "type", "target", "required", "values", "default_value"}
@@ -587,6 +588,7 @@ def _safe_template_configuration(
     for field in ("playbook", "description", "git_branch", "type"):
         if field in request:
             configuration[field] = request[field]
+    configuration["app"] = _DEFAULT_TEMPLATE_APP
     if "view" in resources:
         configuration["view"] = {"id": resources["view"]["id"], "name": resources["view"]["name"]}
     if vaults:
@@ -669,6 +671,7 @@ def _handle_template_create(args: argparse.Namespace, client: SemaphoreClient) -
     )
     payload.setdefault("environment_id", 0)
     payload["project_id"] = project_id
+    payload["app"] = _DEFAULT_TEMPLATE_APP
     client.assert_template_create_supported(payload)
     created = client.create_template(project_id, payload)
     result = {

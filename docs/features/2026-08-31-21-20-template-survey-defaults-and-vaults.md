@@ -14,7 +14,7 @@ sources:
   - https://raw.githubusercontent.com/semaphoreui/semaphore/develop/db/Template.go
   - https://semaphoreui.com/docs/user-guide/task-templates
   - https://semaphoreui.com/docs/admin-guide/api
-status: completed
+status: in_progress
 ---
 
 # Support Survey Defaults and Vaults in Template Creation
@@ -38,6 +38,13 @@ existing runtime schema preflight for every other field.
 Task templates define task execution; creating one persists configuration and
 does not run a task.[^templates]
 
+End-to-end testing found that the CLI-created template has `app: null`. The
+current implementation builds its payload without the API's `app` member, so
+Semaphore does not receive the app selection. The initial client scope is
+Ansible templates only: every `template create` request must explicitly submit
+`app: "ansible"`. The upstream model defines other app identifiers, but their
+request shapes and compatibility requirements are not yet specified here.[^source]
+
 ## Goal
 
 Let a user create a template containing non-secret survey defaults and vault
@@ -54,6 +61,7 @@ safe output, and no secret material in request files or command output.
 - Exact-name resolution of a vault's referenced project access key.
 - Runtime schema-preflight support for the known default-value and `select`
   extensions.
+- An explicit Ansible application selection for every created template.
 - Safe JSON and human-readable output, documentation, and fake-server tests.
 
 ### Out of scope
@@ -64,6 +72,10 @@ safe output, and no secret material in request files or command output.
   scripts, or access keys.
 - Setting a default value for a `secret` survey variable.
 - Updating, deleting, cloning, or executing templates.
+- Selecting a non-Ansible app, accepting an `app` request-file member or an
+  `--app` option, or validating app-specific parameters for Terraform,
+  OpenTofu, Terragrunt, Bash, PowerShell, Python, Pulumi, or an
+  instance-specific application.
 - Relaxing schema validation for fields other than the two known extensions.
 - Live Semaphore mutation during development or validation.
 
@@ -164,11 +176,20 @@ and prevents the create request.
    access-key secret material, or vault scripts. Safe output may include each
    configured vault's name, type, and resolved access-key identity.
 10. Preserve all existing commands and all supported template-create behavior.
+11. For every direct-option and request-file template-create invocation, add
+    `"app": "ansible"` to the final API payload after local validation and
+    named-resource resolution, before schema preflight and the create POST.
+    Do not accept a caller-supplied `app` value in either input mode.
+12. Include `app: "ansible"` in the safe effective configuration reported by
+    `--json`. Human output remains limited to the created template identity.
 
 ## Implementation notes
 
 - Extend the CLI request-shape validators in `src/semaphore_ui/cli.py` and keep
   the existing direct-option/file exclusivity unchanged.
+- Keep `app` a CLI-owned payload field, rather than a request-file field or CLI
+  option. This prevents callers from silently creating an unsupported app type
+  while the client is Ansible-only.
 - Add project access-key list/find support in `src/semaphore_ui/api.py`, using
   `GET /api/project/{project_id}/keys` and the repository's existing safe HTTP,
   list-response, exact-name, and positive-ID validation patterns. Semaphore's
@@ -204,13 +225,21 @@ and prevents the create request.
   reveal defaults, scripts, arguments, task parameters, or credentials.
 - [x] Existing template-create tests remain green and no test requires network,
   credentials, or a live Semaphore instance.
+- [x] Direct-option and request-file creation both preflight and POST a payload
+  containing exactly `app: "ansible"`.
+- [x] A caller-supplied `app` request-file field remains rejected locally,
+  before lookup, preflight, or POST.
+- [x] The safe JSON configuration records `app: "ansible"`, without expanding
+  the human-readable success output.
 - [x] `uv run pytest`, `uv build`, and `git diff --check` pass.
 
 ## Validation plan
 
-1. Add focused failing tests for default-value validation/payload preservation,
-   extension-aware Swagger validation, vault validation, access-key resolution,
-   safe output, and each no-POST failure path.
+1. Add focused failing tests for explicit Ansible payload injection, request-file
+   app rejection, schema preflight, and safe JSON output; preserve coverage for
+   default-value validation/payload preservation, extension-aware Swagger
+   validation, vault validation, access-key resolution, safe output, and each
+   no-POST failure path.
 2. Run the focused tests and confirm they fail before implementation.
 3. Implement the smallest CLI/client/schema changes, rerunning the focused
    tests until they pass.
@@ -235,11 +264,11 @@ and prevents the create request.
 
 ## Completion conditions
 
-The work is ready for closeout only after the approved scope is implemented on
+The reopened work is ready for closeout only after the approved scope is implemented on
 a feature branch, tests and declared validation pass, documentation is current,
 the feature branch is synchronized with local `main`, mandatory release-closeout
-policy succeeds, and the branch is pushed for review. This specification starts
-as `proposed` and must not be implemented until user approval.
+policy succeeds, and the branch is pushed for review. The newly added app-default
+scope must not be implemented until the revised specification is approved.
 
 ## Release Closeout
 
@@ -270,6 +299,12 @@ as `proposed` and must not be implemented until user approval.
 
 ## Amendments
 
+- Reopen the feature after end-to-end testing found templates created with a
+  null app. Until a future separately specified expansion, the CLI owns this
+  field and always submits `app: "ansible"`; it exposes no app input. The
+  upstream app constants also name `terraform`, `tofu`, `terragrunt`, `bash`,
+  `powershell`, `python`, and `pulumi`, but these are explicitly out of scope
+  for this amendment.[^source]
 - Add discoverable `template create --help` guidance for nested survey and
   vault configuration. Add regression coverage for the help text and preserve
   all command behavior.
