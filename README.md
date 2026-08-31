@@ -44,7 +44,7 @@ Check the installed version:
 
 ```console
 $ semaphore-ui --version
-semaphore-ui 0.4.1
+semaphore-ui 0.4.2
 ```
 
 List projects and templates:

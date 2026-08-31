@@ -14,7 +14,7 @@ sources:
   - https://raw.githubusercontent.com/semaphoreui/semaphore/develop/db/Template.go
   - https://semaphoreui.com/docs/user-guide/task-templates
   - https://semaphoreui.com/docs/admin-guide/api
-status: in_progress
+status: completed
 ---
 
 # Support Survey Defaults and Vaults in Template Creation
@@ -260,6 +260,13 @@ as `proposed` and must not be implemented until user approval.
   synchronization reported `Already up to date.`, `uv lock --check`, `uv run
   pytest` (45 passed), `uv build`, `uv run semaphore-ui --version` (reported
   `0.4.1`), and `git diff --check` passed.
+- Swagger compatibility amendment release: updated and passed (patch). The
+  missing-`/api/swagger` compatibility fix changes version `0.4.1` to `0.4.2`.
+  `pyproject.toml` remains authoritative and `uv.lock` was regenerated. After
+  local-main synchronization, `uv lock --check`, `uv run pytest` (46 passed),
+  `uv run semaphore-ui template create --help`, `uv build`,
+  `uv run semaphore-ui --version` (reported `0.4.2`), and `git diff --check`
+  passed. Build distributions are validation-only ignored artifacts.
 
 ## Amendments
 
