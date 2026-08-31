@@ -12,7 +12,7 @@ sources:
   - https://raw.githubusercontent.com/semaphoreui/semaphore/develop/api-docs.yml
   - https://semaphoreui.com/docs/admin-guide/api
   - https://semaphoreui.com/docs/user-guide/task-templates
-status: proposed
+status: completed
 ---
 
 # Create Semaphore Task Templates
@@ -162,3 +162,9 @@ The API documentation identifies `TemplateRequest` fields including `project_id`
 [^1]: Semaphore UI, `api-docs.yml`, `TemplateRequest` and template endpoints, https://raw.githubusercontent.com/semaphoreui/semaphore/develop/api-docs.yml
 [^2]: Semaphore UI, “API”, authentication and API usage, https://semaphoreui.com/docs/admin-guide/api
 [^3]: Semaphore UI, “Task Templates”, template purpose and task types, https://semaphoreui.com/docs/user-guide/task-templates
+
+## Release Closeout
+
+- Status: updated (minor, backward-compatible public CLI feature).
+- Version: `0.2.0` to `0.3.0`; authoritative source: `pyproject.toml`; derived artifact: `uv.lock`.
+- Validation: `uv lock --check`, `uv run pytest` (29 passed), `uv build`, and `git diff --check` passed on the synchronized feature branch.

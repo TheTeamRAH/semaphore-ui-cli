@@ -150,6 +150,194 @@ def _handle_templates(args: argparse.Namespace, client: SemaphoreClient) -> int:
     return 0
 
 
+_TEMPLATE_FIELDS = {
+    "name",
+    "repository",
+    "inventory",
+    "environment",
+    "playbook",
+    "description",
+    "git_branch",
+    "type",
+    "arguments",
+    "survey_vars",
+    "task_params",
+    "view",
+}
+_TEMPLATE_REQUIRED_FIELDS = {"name", "repository", "inventory", "environment", "playbook"}
+_SURVEY_TYPES = {"", "int", "enum", "secret", "text"}
+_SURVEY_TARGETS = {"", "env"}
+
+
+def _require_nonempty_string(value: Any, field: str) -> str:
+    """Validate and return a non-empty request string."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"template {field} must be a non-empty string")
+    return value
+
+
+def _validate_survey_vars(value: Any) -> list[dict[str, Any]]:
+    """Validate the supported non-secret portion of survey-variable configuration."""
+    if not isinstance(value, list):
+        raise ValueError("template survey_vars must be a list")
+    result = []
+    allowed = {"name", "title", "description", "type", "target", "required", "values"}
+    for index, item in enumerate(value):
+        if not isinstance(item, dict) or set(item) - allowed:
+            raise ValueError(f"template survey_vars[{index}] has unsupported fields")
+        for field in ("name", "title"):
+            _require_nonempty_string(item.get(field), f"survey_vars[{index}].{field}")
+        if "description" in item and not isinstance(item["description"], str):
+            raise ValueError(f"template survey_vars[{index}].description must be a string")
+        if item.get("type", "") not in _SURVEY_TYPES:
+            raise ValueError(f"template survey_vars[{index}].type is unsupported")
+        if item.get("target", "") not in _SURVEY_TARGETS:
+            raise ValueError(f"template survey_vars[{index}].target is unsupported")
+        if "required" in item and not isinstance(item["required"], bool):
+            raise ValueError(f"template survey_vars[{index}].required must be a boolean")
+        if "values" in item:
+            if item.get("type") == "secret":
+                raise ValueError("template secret survey variables cannot include values")
+            if not isinstance(item["values"], list) or not all(
+                isinstance(option, dict)
+                and set(option) <= {"name", "value"}
+                and isinstance(option.get("name"), str)
+                and isinstance(option.get("value"), str)
+                for option in item["values"]
+            ):
+                raise ValueError(f"template survey_vars[{index}].values must be name/value objects")
+        result.append(item)
+    return result
+
+
+def _validate_task_params(value: Any) -> dict[str, Any]:
+    """Validate task parameters accepted by the published Semaphore API schema."""
+    if not isinstance(value, dict) or set(value) - {"environment", "git_branch", "message", "arguments", "params"}:
+        raise ValueError("template task_params has unsupported fields")
+    for field in ("environment", "git_branch", "message", "arguments"):
+        if field in value and not isinstance(value[field], str):
+            raise ValueError(f"template task_params.{field} must be a string")
+    if "params" in value:
+        params = value["params"]
+        boolean_fields = {"debug", "dry_run", "diff", "skip_galaxy_install", "plan", "destroy", "auto_approve", "upgrade"}
+        list_fields = {"limit", "tags", "skip_tags"}
+        if not isinstance(params, dict) or set(params) - boolean_fields - list_fields:
+            raise ValueError("template task_params.params has unsupported fields")
+        if any(field in params and not isinstance(params[field], bool) for field in boolean_fields):
+            raise ValueError("template task_params.params boolean values must be booleans")
+        if any(
+            field in params
+            and (not isinstance(params[field], list) or not all(isinstance(item, str) for item in params[field]))
+            for field in list_fields
+        ):
+            raise ValueError("template task_params.params list values must be string lists")
+    return value
+
+
+def _validate_template_request(request: dict[str, Any]) -> dict[str, Any]:
+    """Validate a name-based template request before any resource lookup or POST."""
+    unknown = set(request) - _TEMPLATE_FIELDS
+    if unknown:
+        raise ValueError(f"template request has unsupported fields: {', '.join(sorted(unknown))}")
+    missing = sorted(field for field in _TEMPLATE_REQUIRED_FIELDS if field not in request)
+    if missing:
+        raise ValueError(f"template request is missing required fields: {', '.join(missing)}")
+    result = dict(request)
+    for field in _TEMPLATE_REQUIRED_FIELDS:
+        result[field] = _require_nonempty_string(result[field], field)
+    for field in ("description", "git_branch", "arguments", "view"):
+        if field in result and not isinstance(result[field], str):
+            raise ValueError(f"template {field} must be a string")
+    template_type = result.get("type", "")
+    if template_type not in {"", "build", "deploy"}:
+        raise ValueError("template type must be one of: default, build, deploy")
+    result["type"] = template_type
+    if "survey_vars" in result:
+        result["survey_vars"] = _validate_survey_vars(result["survey_vars"])
+    if "task_params" in result:
+        result["task_params"] = _validate_task_params(result["task_params"])
+    return result
+
+
+def _template_request_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    """Load one exclusive direct-option or JSON-file template request."""
+    direct = {
+        field: getattr(args, field)
+        for field in _TEMPLATE_FIELDS
+        if getattr(args, field, None) is not None
+    }
+    if direct.get("type") == "default":
+        direct["type"] = ""
+    if args.file:
+        if direct:
+            raise ValueError("template --file cannot be combined with direct template options")
+        try:
+            with open(args.file, encoding="utf-8") as request_file:
+                loaded = json.load(request_file)
+        except OSError as exc:
+            raise ValueError(f"unable to read template request file: {exc}") from exc
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"template request file is not valid JSON: {exc.msg}") from exc
+        if not isinstance(loaded, dict):
+            raise ValueError("template request file must contain a JSON object")
+        return _validate_template_request(loaded)
+    return _validate_template_request(direct)
+
+
+def _safe_template_configuration(request: dict[str, Any], resources: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Return stable, non-secret configuration safe for command output."""
+    configuration = {
+        key: {"id": resources[key]["id"], "name": resources[key]["name"]}
+        for key in ("repository", "inventory", "environment")
+    }
+    for field in ("playbook", "description", "git_branch", "type"):
+        if field in request:
+            configuration[field] = request[field]
+    if "view" in resources:
+        configuration["view"] = {"id": resources["view"]["id"], "name": resources["view"]["name"]}
+    return configuration
+
+
+def _resource_id(resource: dict[str, Any], resource_name: str) -> int:
+    """Return a resolved resource's positive ID before a mutating request."""
+    resource_id = resource.get("id")
+    if isinstance(resource_id, bool) or not isinstance(resource_id, int) or resource_id <= 0:
+        raise ValueError(f"resolved {resource_name} did not contain a positive id")
+    return resource_id
+
+
+def _handle_template_create(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Resolve named resources, explicitly create one template, and report it safely."""
+    request = _template_request_from_args(args)
+    project = client.find_project(args.project)
+    resources = {
+        "repository": client.find_repository(project["id"], request["repository"]),
+        "inventory": client.find_inventory(project["id"], request["inventory"]),
+        "environment": client.find_environment(project["id"], request["environment"]),
+    }
+    if "view" in request:
+        resources["view"] = client.find_view(project["id"], request["view"])
+    payload = {
+        key: value
+        for key, value in request.items()
+        if key not in {"repository", "inventory", "environment", "view"}
+    }
+    payload.update(
+        {f"{key}_id": _resource_id(resource, key) for key, resource in resources.items()}
+    )
+    created = client.create_template(project["id"], payload)
+    result = {
+        "project": project,
+        "template": {key: created[key] for key in ("id", "project_id", "name")},
+        "configuration": _safe_template_configuration(request, resources),
+    }
+    if args.as_json:
+        _print(result, True)
+    else:
+        print(f"Created template {created['id']}: {created['name']}")
+    return 0
+
+
 def _handle_run(args: argparse.Namespace, client: SemaphoreClient) -> int:
     """Resolve and trigger a named template, optionally waiting for completion."""
     project = client.find_project(args.project)
@@ -350,6 +538,24 @@ def build_parser() -> argparse.ArgumentParser:
     templates.add_argument("--project", required=True)
     _add_json_argument(templates)
     templates.set_defaults(handler=_handle_templates)
+
+    template = sub.add_parser("template", help="manage a task template")
+    template_sub = template.add_subparsers(dest="template_command", required=True)
+    create = template_sub.add_parser("create", help="create a template without running it")
+    create.add_argument("--project", required=True, help="exact project name")
+    create.add_argument("--file", help="JSON request file; cannot be combined with template options")
+    create.add_argument("--name")
+    create.add_argument("--repository", help="exact repository name in the project")
+    create.add_argument("--inventory", help="exact inventory name in the project")
+    create.add_argument("--environment", help="exact environment name in the project")
+    create.add_argument("--playbook", help="playbook path in the selected repository")
+    create.add_argument("--description")
+    create.add_argument("--git-branch")
+    create.add_argument("--type", choices=("default", "build", "deploy"), dest="type")
+    create.add_argument("--arguments", help="Semaphore arguments string")
+    create.add_argument("--view", help="exact view name in the project")
+    _add_json_argument(create)
+    create.set_defaults(handler=_handle_template_create)
 
     run = sub.add_parser("run", help="trigger a task template by project and template name")
     run.add_argument("--project", required=True)

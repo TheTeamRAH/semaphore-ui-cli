@@ -108,6 +108,28 @@ def _require_task_status(task: dict[str, Any]) -> str:
     return status
 
 
+def _require_positive_id(value: Any, field: str, resource: str) -> int:
+    """Validate a positive integer field in an API resource."""
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise APIError(f"Semaphore {resource} response did not contain a positive integer {field}")
+    return value
+
+
+def _require_template(template: Any, project_id: int) -> dict[str, Any]:
+    """Validate a created template response and return it."""
+    if not isinstance(template, dict):
+        raise APIError("Semaphore template response was not an object")
+    _require_positive_id(template.get("id"), "id", "template")
+    response_project_id = _require_positive_id(
+        template.get("project_id"), "project_id", "template"
+    )
+    if response_project_id != project_id:
+        raise APIError("Semaphore template response project_id did not match the requested project")
+    if not isinstance(template.get("name"), str) or not template["name"].strip():
+        raise APIError("Semaphore template response did not contain a non-empty name")
+    return template
+
+
 def _decode_environment(task: dict[str, Any]) -> dict[str, Any]:
     """Decode and validate a task's environment object.
 
@@ -259,7 +281,8 @@ class SemaphoreClient:
         if not matches:
             raise LookupError(f"No Semaphore {resource} named {name!r}")
         if len(matches) > 1:
-            raise LookupError(f"Multiple Semaphore {resource}s named {name!r}")
+            plural = {"repository": "repositories"}.get(resource, f"{resource}s")
+            raise LookupError(f"Multiple Semaphore {plural} named {name!r}")
         return matches[0]
 
     def list_projects(self) -> list[dict[str, Any]]:
@@ -280,6 +303,42 @@ class SemaphoreClient:
             The uniquely matching project dictionary.
         """
         return self._filter_exact(self.list_projects(), name, "project")
+
+    def _list_project_resources(self, project_id: int, path: str, resource: str) -> list[dict[str, Any]]:
+        """Return one project-scoped named resource collection."""
+        return _require_list_of_objects(self._request("GET", f"/api/project/{project_id}/{path}"), resource)
+
+    def list_repositories(self, project_id: int) -> list[dict[str, Any]]:
+        """Return repositories available within a project."""
+        return self._list_project_resources(project_id, "repositories", "repositories")
+
+    def find_repository(self, project_id: int, name: str) -> dict[str, Any]:
+        """Resolve a repository by exact project-scoped name."""
+        return self._filter_exact(self.list_repositories(project_id), name, "repository")
+
+    def list_inventories(self, project_id: int) -> list[dict[str, Any]]:
+        """Return inventories available within a project."""
+        return self._list_project_resources(project_id, "inventory", "inventories")
+
+    def find_inventory(self, project_id: int, name: str) -> dict[str, Any]:
+        """Resolve an inventory by exact project-scoped name."""
+        return self._filter_exact(self.list_inventories(project_id), name, "inventory")
+
+    def list_environments(self, project_id: int) -> list[dict[str, Any]]:
+        """Return environment variable groups available within a project."""
+        return self._list_project_resources(project_id, "environment", "environments")
+
+    def find_environment(self, project_id: int, name: str) -> dict[str, Any]:
+        """Resolve an environment by exact project-scoped name."""
+        return self._filter_exact(self.list_environments(project_id), name, "environment")
+
+    def list_views(self, project_id: int) -> list[dict[str, Any]]:
+        """Return views available within a project."""
+        return self._list_project_resources(project_id, "views", "views")
+
+    def find_view(self, project_id: int, name: str) -> dict[str, Any]:
+        """Resolve a view by exact project-scoped name."""
+        return self._filter_exact(self.list_views(project_id), name, "view")
 
     def list_templates(self, project_id: int) -> list[dict[str, Any]]:
         """Return all task templates in a project.
@@ -305,6 +364,12 @@ class SemaphoreClient:
             The uniquely matching task-template dictionary.
         """
         return self._filter_exact(self.list_templates(project_id), name, "template")
+
+    def create_template(self, project_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        """Create a template in a project and validate the returned identity."""
+        return _require_template(
+            self._request("POST", f"/api/project/{project_id}/templates", payload), project_id
+        )
 
     def create_task(self, project_id: int, template_id: int, variables: dict[str, str]) -> dict[str, Any]:
         """Queue a task with Semaphore survey/environment variables.

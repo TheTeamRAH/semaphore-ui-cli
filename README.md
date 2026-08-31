@@ -83,6 +83,55 @@ semaphore-ui run \
   --var fact=firewall_interface
 ```
 
+Create a task template without running it. The project, repository, inventory,
+environment, and optional view are resolved by exact name before the one
+configuration-changing request is made:
+
+```bash
+semaphore-ui template create \
+  --project configuration_management \
+  --name show-firewall-interface \
+  --repository configuration-management \
+  --inventory homelab \
+  --environment default \
+  --playbook site.yml \
+  --git-branch main
+```
+
+For survey variables or task parameters, use a JSON object with name-based
+resource references. Do not put API tokens, SSH keys, vault material, or secret
+survey values in this file:
+
+```json
+{
+  "name": "show-firewall-interface",
+  "repository": "configuration-management",
+  "inventory": "homelab",
+  "environment": "default",
+  "playbook": "site.yml",
+  "git_branch": "main",
+  "type": "",
+  "survey_vars": [
+    {"name": "target", "title": "Target", "type": "", "required": true}
+  ],
+  "task_params": {"params": {"dry_run": true, "tags": ["firewall"]}}
+}
+```
+
+```bash
+semaphore-ui template create --project configuration_management --file template.json --json
+```
+
+The request file accepts `name`, `repository`, `inventory`, `environment`, and
+`playbook` (all required); plus `description`, `git_branch`, `type` (`""`,
+`build`, or `deploy`), `arguments`, `survey_vars`, `task_params`, and `view`.
+It cannot be combined with direct template options. The `--json` result contains
+the created template and only safe effective configuration; it deliberately
+omits arguments, survey values, and task parameters. Template creation persists
+configuration but does not execute a playbook. The token must have permission to
+create templates and read the referenced project resources; authorization
+failures return exit status `2`.
+
 Wait for completion and retrieve output:
 
 ```bash
@@ -96,7 +145,7 @@ Check a task:
 semaphore-ui status --project NAME --task ID
 ```
 
-Use `--json` on commands that return structured data for CI and agent integrations. `projects` and `templates` return API resource arrays. `run`, `status`, and `wait` return an envelope with `project`, `template` (for `run`), `task`, and `variables` (for `run`); `task` contains the Semaphore task ID, status, timestamps, and environment. `output --json` returns output entries with `time`, `task_id`, and `output`. Successful tasks exit `0`; task failures exit `1`; configuration, lookup, API, and timeout errors exit `2`.
+Use `--json` on commands that return structured data for CI and agent integrations. `projects` and `templates` return API resource arrays. `run`, `status`, and `wait` return an envelope with `project`, `template` (for `run`), `task`, and `variables` (for `run`); `template create --json` returns `project`, `template`, and safe `configuration`; `task` contains the Semaphore task ID, status, timestamps, and environment. `output --json` returns output entries with `time`, `task_id`, and `output`. Successful commands exit `0`; task failures exit `1`; configuration, validation, lookup, network, authorization, malformed-response, and other API errors exit `2`.
 
 ## Recent Features
 
