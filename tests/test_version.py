@@ -17,3 +17,10 @@ def test_cli_and_package_versions_match_pyproject(capsys):
     assert exc_info.value.code == 0
     assert capsys.readouterr().out.strip() == f"semaphore-ui {declared_version}"
     assert semaphore_ui.__version__ == declared_version
+
+
+def test_readme_version_example_matches_pyproject():
+    root = Path(__file__).parents[1]
+    declared_version = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
+
+    assert f"semaphore-ui {declared_version}" in (root / "README.md").read_text()
