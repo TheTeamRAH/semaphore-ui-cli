@@ -150,4 +150,7 @@ The final schema must reflect the actual deployed API and clearly document omitt
 
 ## Amendments
 
-None.
+- Correct the package version after the task-discovery release by deriving
+  `semaphore_ui.__version__` from installed package metadata and exposing the
+  same value through `semaphore-ui --version`. A regression test compares both
+  values with the version declared in `pyproject.toml`.

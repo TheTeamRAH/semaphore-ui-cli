@@ -1,7 +1,42 @@
+# Python environments and local configuration
 .venv/
+.env
+.env.*
+!.env.example
+
+# Python bytecode and caches
 __pycache__/
-.pytest_cache/
 *.py[cod]
+*$py.class
+
+# Test, coverage, type-checker, and linter caches
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.tox/
+.nox/
+
+# Package and build artifacts
 dist/
 build/
 *.egg-info/
+.eggs/
+wheels/
+pip-wheel-metadata/
+
+# Common IDE workspace files
+.idea/
+.vscode/
+*.code-workspace
+
+# Editor and operating-system files
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
