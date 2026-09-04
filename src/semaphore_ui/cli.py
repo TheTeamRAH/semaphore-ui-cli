@@ -698,12 +698,28 @@ def _copy_survey_vars(source: Any) -> list[dict[str, Any]]:
     Raises:
         ValueError: If the source is malformed or contains a secret variable.
     """
-    if source is None:
-        return []
-    survey_vars = _validate_survey_vars(source)
+    survey_vars = _validate_survey_vars(source if source is not None else [])
     if any(item.get("type") == "secret" for item in survey_vars):
         raise ValueError("template copy cannot copy secret survey variables")
     return [dict(item) for item in survey_vars]
+
+
+def _copy_vault(source: dict[str, Any], index: int) -> dict[str, Any]:
+    """Validate and copy one non-secret vault reference."""
+    secret_fields = {"script", "password", "value"}.intersection(source)
+    if secret_fields:
+        raise ValueError(f"template copy vaults[{index}] contain unsupported secret content")
+    allowed = {"name", "type", "vault_key_id"}
+    if set(source) - allowed:
+        raise ValueError(f"template copy vaults[{index}] contain unsupported fields")
+    if not isinstance(source.get("name"), str) or not isinstance(source.get("type"), str):
+        raise ValueError(f"template copy vaults[{index}] have invalid identity")
+    entry = {key: source[key] for key in ("name", "type")}
+    if "vault_key_id" in source:
+        entry["vault_key_id"] = require_positive_int(
+            source["vault_key_id"], ValueError, "copied vault access key did not contain a positive id"
+        )
+    return entry
 
 
 def _copy_vaults(source: Any) -> list[dict[str, Any]]:
@@ -718,26 +734,22 @@ def _copy_vaults(source: Any) -> list[dict[str, Any]]:
     Raises:
         ValueError: If vault data contains secret content or an invalid key ID.
     """
-    if source is None:
-        return []
-    if not isinstance(source, list) or not all(isinstance(item, dict) for item in source):
+    vaults = source if source is not None else []
+    if not isinstance(vaults, list) or not all(isinstance(item, dict) for item in vaults):
         raise ValueError("template copy vaults must be a list of objects")
-    copied = []
-    for index, vault in enumerate(source):
-        if "script" in vault or "password" in vault or "value" in vault:
-            raise ValueError(f"template copy vaults[{index}] contain unsupported secret content")
-        allowed = {"name", "type", "vault_key_id"}
-        if set(vault) - allowed:
-            raise ValueError(f"template copy vaults[{index}] contain unsupported fields")
-        if not isinstance(vault.get("name"), str) or not isinstance(vault.get("type"), str):
-            raise ValueError(f"template copy vaults[{index}] have invalid identity")
-        entry = {key: vault[key] for key in ("name", "type")}
-        if "vault_key_id" in vault:
-            entry["vault_key_id"] = require_positive_int(
-                vault["vault_key_id"], ValueError, "copied vault access key did not contain a positive id"
-            )
-        copied.append(entry)
-    return copied
+    return [_copy_vault(vault, index) for index, vault in enumerate(vaults)]
+
+
+def _copy_task_params(source: Any) -> dict[str, Any] | None:
+    """Validate supported task parameters from an existing template."""
+    if source is None:
+        return None
+    if not isinstance(source, dict):
+        raise ValueError("template copy task_params must be an object")
+    task_params = dict(source)
+    if task_params.pop("allow_override_inventory", False):
+        raise ValueError("template copy cannot preserve allow_override_inventory")
+    return _validate_task_params(task_params) if task_params else None
 
 
 def _template_copy_request(source: dict[str, Any], destination: str) -> dict[str, Any]:
@@ -753,8 +765,7 @@ def _template_copy_request(source: dict[str, Any], destination: str) -> dict[str
     Raises:
         ValueError: If required source fields or supported configuration are missing.
     """
-    required_ids = ("repository_id", "inventory_id")
-    for field in required_ids:
+    for field in ("repository_id", "inventory_id"):
         _resource_id(source, field.removesuffix("_id"))
     if not isinstance(source.get("playbook"), str) or not source["playbook"]:
         raise ValueError("template copy source has no usable playbook")
@@ -769,24 +780,18 @@ def _template_copy_request(source: dict[str, Any], destination: str) -> dict[str
         "playbook": source["playbook"],
         "type": source.get("type", ""),
         "app": _DEFAULT_TEMPLATE_APP,
+        **{field: source[field] for field in ("description", "git_branch", "arguments") if field in source},
     }
-    for field in ("description", "git_branch", "arguments"):
-        if field in source:
-            payload[field] = source[field]
-    if "survey_vars" in source:
-        payload["survey_vars"] = _copy_survey_vars(source["survey_vars"])
-    if "vaults" in source:
-        payload["vaults"] = _copy_vaults(source["vaults"])
-    if "task_params" in source:
-        task_params = source["task_params"]
-        if not isinstance(task_params, dict):
-            raise ValueError("template copy task_params must be an object")
-        if "allow_override_inventory" in task_params:
-            if task_params["allow_override_inventory"] is not False:
-                raise ValueError("template copy cannot preserve allow_override_inventory")
-            task_params = {key: value for key, value in task_params.items() if key != "allow_override_inventory"}
-        if task_params:
-            payload["task_params"] = _validate_task_params(task_params)
+    optional = {
+        field: copier(source[field])
+        for field, copier in {
+            "survey_vars": _copy_survey_vars,
+            "vaults": _copy_vaults,
+            "task_params": _copy_task_params,
+        }.items()
+        if field in source
+    }
+    payload.update({key: value for key, value in optional.items() if value is not None})
     if "view_id" in source:
         payload["view_id"] = _resource_id(source, "view")
     return payload
@@ -799,18 +804,13 @@ def _safe_template_copy_configuration(payload: dict[str, Any]) -> dict[str, Any]
         for key in ("repository_id", "inventory_id", "environment_id", "playbook", "type", "app")
         if key in payload
     }
-    for field in ("description", "git_branch"):
-        if field in payload:
-            configuration[field] = payload[field]
-    if "survey_vars" in payload:
-        configuration["survey_vars"] = payload["survey_vars"]
+    configuration.update({field: payload[field] for field in ("description", "git_branch") if field in payload})
+    configuration.update({field: payload[field] for field in ("survey_vars", "task_params") if field in payload})
     if "vaults" in payload:
         configuration["vaults"] = [
             {key: value for key, value in vault.items() if key != "vault_key_id"}
             for vault in payload["vaults"]
         ]
-    if "task_params" in payload:
-        configuration["task_params"] = payload["task_params"]
     return configuration
 
 
