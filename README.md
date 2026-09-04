@@ -44,7 +44,7 @@ Check the installed version:
 
 ```console
 $ semaphore-ui --version
-semaphore-ui 0.4.3
+semaphore-ui 0.5.0
 ```
 
 List projects and templates:
@@ -163,6 +163,25 @@ and other preflight errors return exit status `2` and prevent the POST.
 Semaphore's known `survey_vars[].default_value` and `select` extensions remain
 accepted when an otherwise compatible instance Swagger document has not yet
 listed them.
+
+Copy an existing template without running it. The source is resolved by exact
+name, the destination must be new, and supported non-secret configuration is
+preserved:
+
+```bash
+semaphore-ui template copy \
+  --project configuration_management \
+  --template hello_world \
+  --name hello_world_copy \
+  --json
+```
+
+Template copying never copies credentials, vault passwords, vault scripts, or
+secret survey values. It also never executes a task. Unsupported source
+configuration causes a validation error before the create request.
+
+The copy command reports the source and created template identities plus safe
+effective configuration.
 
 Wait for completion and retrieve output:
 

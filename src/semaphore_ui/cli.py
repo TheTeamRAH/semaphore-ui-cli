@@ -686,6 +686,173 @@ def _handle_template_create(args: argparse.Namespace, client: SemaphoreClient) -
     return 0
 
 
+def _copy_survey_vars(source: Any) -> list[dict[str, Any]]:
+    """Return safe, validated survey definitions for a copied template.
+
+    Args:
+        source: Survey-variable collection returned by Semaphore.
+
+    Returns:
+        Validated survey-variable definitions without secret variables.
+
+    Raises:
+        ValueError: If the source is malformed or contains a secret variable.
+    """
+    if source is None:
+        return []
+    survey_vars = _validate_survey_vars(source)
+    if any(item.get("type") == "secret" for item in survey_vars):
+        raise ValueError("template copy cannot copy secret survey variables")
+    return [dict(item) for item in survey_vars]
+
+
+def _copy_vaults(source: Any) -> list[dict[str, Any]]:
+    """Return safe vault references that can be submitted to template creation.
+
+    Args:
+        source: Vault-reference collection returned by Semaphore.
+
+    Returns:
+        Vault references containing names, types, and numeric key IDs.
+
+    Raises:
+        ValueError: If vault data contains secret content or an invalid key ID.
+    """
+    if source is None:
+        return []
+    if not isinstance(source, list) or not all(isinstance(item, dict) for item in source):
+        raise ValueError("template copy vaults must be a list of objects")
+    copied = []
+    for index, vault in enumerate(source):
+        if "script" in vault or "password" in vault or "value" in vault:
+            raise ValueError(f"template copy vaults[{index}] contain unsupported secret content")
+        allowed = {"name", "type", "vault_key_id"}
+        if set(vault) - allowed:
+            raise ValueError(f"template copy vaults[{index}] contain unsupported fields")
+        if not isinstance(vault.get("name"), str) or not isinstance(vault.get("type"), str):
+            raise ValueError(f"template copy vaults[{index}] have invalid identity")
+        entry = {key: vault[key] for key in ("name", "type")}
+        if "vault_key_id" in vault:
+            entry["vault_key_id"] = require_positive_int(
+                vault["vault_key_id"], ValueError, "copied vault access key did not contain a positive id"
+            )
+        copied.append(entry)
+    return copied
+
+
+def _template_copy_request(source: dict[str, Any], destination: str) -> dict[str, Any]:
+    """Build a create payload from a safe, supported source template.
+
+    Args:
+        source: Existing template returned by Semaphore.
+        destination: New template name.
+
+    Returns:
+        A payload suitable for the existing template-create API path.
+
+    Raises:
+        ValueError: If required source fields or supported configuration are missing.
+    """
+    required_ids = ("repository_id", "inventory_id")
+    for field in required_ids:
+        _resource_id(source, field.removesuffix("_id"))
+    if not isinstance(source.get("playbook"), str) or not source["playbook"]:
+        raise ValueError("template copy source has no usable playbook")
+    environment_id = source.get("environment_id", 0)
+    if not isinstance(environment_id, int) or isinstance(environment_id, bool) or environment_id < 0:
+        raise ValueError("template copy source has an invalid environment")
+    payload = {
+        "name": destination,
+        "repository_id": source["repository_id"],
+        "inventory_id": source["inventory_id"],
+        "environment_id": environment_id,
+        "playbook": source["playbook"],
+        "type": source.get("type", ""),
+        "app": _DEFAULT_TEMPLATE_APP,
+    }
+    for field in ("description", "git_branch", "arguments"):
+        if field in source:
+            payload[field] = source[field]
+    if "survey_vars" in source:
+        payload["survey_vars"] = _copy_survey_vars(source["survey_vars"])
+    if "vaults" in source:
+        payload["vaults"] = _copy_vaults(source["vaults"])
+    if "task_params" in source:
+        task_params = source["task_params"]
+        if not isinstance(task_params, dict):
+            raise ValueError("template copy task_params must be an object")
+        if "allow_override_inventory" in task_params:
+            if task_params["allow_override_inventory"] is not False:
+                raise ValueError("template copy cannot preserve allow_override_inventory")
+            task_params = {key: value for key, value in task_params.items() if key != "allow_override_inventory"}
+        if task_params:
+            payload["task_params"] = _validate_task_params(task_params)
+    if "view_id" in source:
+        payload["view_id"] = _resource_id(source, "view")
+    return payload
+
+
+def _safe_template_copy_configuration(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return non-secret configuration details for a copied template."""
+    configuration = {
+        key: payload[key]
+        for key in ("repository_id", "inventory_id", "environment_id", "playbook", "type", "app")
+        if key in payload
+    }
+    for field in ("description", "git_branch"):
+        if field in payload:
+            configuration[field] = payload[field]
+    if "survey_vars" in payload:
+        configuration["survey_vars"] = payload["survey_vars"]
+    if "vaults" in payload:
+        configuration["vaults"] = [
+            {key: value for key, value in vault.items() if key != "vault_key_id"}
+            for vault in payload["vaults"]
+        ]
+    if "task_params" in payload:
+        configuration["task_params"] = payload["task_params"]
+    return configuration
+
+
+def _handle_template_copy(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Copy one existing template without executing it.
+
+    Args:
+        args: Parsed template-copy arguments.
+        client: Authenticated client used for lookup, preflight, and creation.
+
+    Returns:
+        Zero after successful creation.
+
+    Raises:
+        SemaphoreError: If Semaphore rejects lookup, preflight, or creation.
+        ValueError: If the source or destination is invalid.
+    """
+    if args.template == args.name:
+        raise ValueError("template copy source and destination names must differ")
+    project = client.find_project(args.project)
+    project_id = _resource_id(project, "project")
+    templates = client.list_templates(project_id)
+    if any(template.get("name") == args.name for template in templates):
+        raise ValueError(f"template already exists: {args.name}")
+    source = client.find_template(project_id, args.template)
+    payload = _template_copy_request(source, args.name)
+    payload["project_id"] = project_id
+    client.assert_template_create_supported(payload)
+    created = client.create_template(project_id, payload)
+    result = {
+        "project": project,
+        "source_template": {key: source[key] for key in ("id", "project_id", "name")},
+        "template": {key: created[key] for key in ("id", "project_id", "name")},
+        "configuration": _safe_template_copy_configuration(payload),
+    }
+    if args.as_json:
+        _print(result, True)
+    else:
+        print(f"Created template {created['id']}: {created['name']} from {source['name']}")
+    return 0
+
+
 def _handle_run(args: argparse.Namespace, client: SemaphoreClient) -> int:
     """Resolve and trigger a named template, optionally waiting for completion."""
     project = client.find_project(args.project)
@@ -912,6 +1079,13 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--view", help="exact view name in the project")
     _add_json_argument(create)
     create.set_defaults(handler=_handle_template_create)
+
+    copy = template_sub.add_parser("copy", help="copy a template without running it")
+    copy.add_argument("--project", required=True, help="exact project name")
+    copy.add_argument("--template", required=True, help="exact source template name")
+    copy.add_argument("--name", required=True, help="new template name")
+    _add_json_argument(copy)
+    copy.set_defaults(handler=_handle_template_copy)
 
     run = sub.add_parser("run", help="trigger a task template by project and template name")
     run.add_argument("--project", required=True)
