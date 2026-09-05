@@ -20,7 +20,7 @@ sources:
   - id: repository-management
     resource: 2026-09-05-20-34-repository-management.md
     title: Follow-on repository management feature
-status: proposed
+status: completed
 author: whose-footprints-are-these
 ---
 
@@ -241,3 +241,20 @@ configuration, lookup, API, and validation failure status `2`.
 - `README.md`: current public command examples and output/exit-status contract.
 - `docs/features/2026-09-05-20-34-repository-management.md`: follow-on
   repository feature that depends on a settled CLI convention.
+
+## Release Closeout
+
+- Decision: updated
+- Reason: This feature adds public canonical CLI commands and compatibility
+  aliases, changing supported CLI behavior without breaking existing forms.
+- Classification: minor
+- Previous version: `0.5.0`
+- Resulting version: `0.6.0`
+- Authoritative version source: `pyproject.toml` `[project].version`
+- Derived artifact: `uv.lock` editable `semaphore-ui` package record updated
+  to `0.6.0`
+- Branch synchronization: current `origin/main` is an ancestor of the feature
+  branch; no merge conflicts remained.
+- Validation: `uv lock --check`, `uv run pytest -q` (57 passed), `uv build`,
+  canonical CLI help smoke tests, and `git diff --check` all passed.
+- Release-facing documentation: README version example updated to `0.6.0`.

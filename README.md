@@ -44,7 +44,7 @@ Check the installed version:
 
 ```console
 $ semaphore-ui --version
-semaphore-ui 0.5.0
+semaphore-ui 0.6.0
 ```
 
 List projects and inspect one project:
