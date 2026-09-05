@@ -44,7 +44,7 @@ Check the installed version:
 
 ```console
 $ semaphore-ui --version
-semaphore-ui 0.4.3
+semaphore-ui 0.5.0
 ```
 
 List projects and templates:
@@ -164,6 +164,25 @@ Semaphore's known `survey_vars[].default_value` and `select` extensions remain
 accepted when an otherwise compatible instance Swagger document has not yet
 listed them.
 
+Copy an existing template without running it. The source is resolved by exact
+name, the destination must be new, and supported non-secret configuration is
+preserved:
+
+```bash
+semaphore-ui template copy \
+  --project configuration_management \
+  --template hello_world \
+  --name hello_world_copy \
+  --json
+```
+
+Template copying never copies credentials, vault passwords, vault scripts, or
+secret survey values. It also never executes a task. Unsupported source
+configuration causes a validation error before the create request.
+
+The copy command reports the source and created template identities plus safe
+effective configuration.
+
 Wait for completion and retrieve output:
 
 ```bash
@@ -183,6 +202,7 @@ Use `--json` on commands that return structured data for CI and agent integratio
 
 | Date | Purpose | Spec | Author |
 | --- | --- | --- | --- |
+| 2026-09-04-23-00 | Add safe Semaphore template copy command | [Specification](docs/features/2026-09-04-23-00-template-copy.md) | whose-footprints-are-these |
 | 2026-08-31-21-20 | Support survey defaults and vaults in template creation | [Specification](docs/features/2026-08-31-21-20-template-survey-defaults-and-vaults.md) | Jibba Jabber |
 | 2026-08-31-14-28 | Document v0.2.0 release candidate CLI usage | [Specification](docs/features/2026-08-31-14-28-document-release-candidate-usage.md) | jibbajabber |
 | 2026-08-29-21-02 | Create Semaphore task templates | [Specification](docs/features/2026-08-29-21-02-create-task-templates.md) | whose-footprints-are-these |
