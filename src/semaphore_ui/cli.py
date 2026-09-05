@@ -144,11 +144,6 @@ def _handle_project_list(args: argparse.Namespace, client: SemaphoreClient) -> i
     return 0
 
 
-def _handle_projects(args: argparse.Namespace, client: SemaphoreClient) -> int:
-    """Handle the legacy ``projects`` compatibility alias."""
-    return _handle_project_list(args, client)
-
-
 def _handle_project_show(args: argparse.Namespace, client: SemaphoreClient) -> int:
     """Show one Semaphore project resolved by exact name."""
     _print(client.find_project(args.project), args.as_json)
@@ -160,11 +155,6 @@ def _handle_template_list(args: argparse.Namespace, client: SemaphoreClient) -> 
     project = client.find_project(args.project)
     _print(client.list_templates(project["id"]), args.as_json)
     return 0
-
-
-def _handle_templates(args: argparse.Namespace, client: SemaphoreClient) -> int:
-    """Handle the legacy ``templates`` compatibility alias."""
-    return _handle_template_list(args, client)
 
 
 def _handle_template_show(args: argparse.Namespace, client: SemaphoreClient) -> int:
@@ -1151,7 +1141,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     projects = sub.add_parser("projects", help="compatibility alias for project list")
     _add_project_list_arguments(projects)
-    projects.set_defaults(handler=_handle_projects)
+    projects.set_defaults(handler=_handle_project_list)
 
     template = sub.add_parser("template", help="manage templates")
     template_sub = template.add_subparsers(dest="template_command", required=True)
@@ -1164,7 +1154,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     templates = sub.add_parser("templates", help="compatibility alias for template list")
     _add_template_list_arguments(templates)
-    templates.set_defaults(handler=_handle_templates)
+    templates.set_defaults(handler=_handle_template_list)
 
     create = template_sub.add_parser("create", help="create a template without running it")
     create.add_argument("--project", required=True, help="exact project name")
