@@ -44,7 +44,7 @@ Check the installed version:
 
 ```console
 $ semaphore-ui --version
-semaphore-ui 0.6.0
+semaphore-ui 1.0.0
 ```
 
 List projects and inspect one project:
@@ -90,9 +90,10 @@ semaphore-ui task run \
   --var fact=firewall_interface
 ```
 
-The legacy top-level forms `projects`, `templates`, `tasks`, `run`, `status`,
-`wait`, and `output` remain supported as compatibility aliases. New scripts
-should use the singular resource commands above.
+The singular resource commands are the supported interface. The former
+top-level forms `projects`, `templates`, `tasks`, `run`, `status`, `wait`, and
+`output` were removed in the `1.0.0` breaking release; migrate those commands
+to the resource forms above.
 
 Create a task template without running it. The project, repository, inventory,
 and optional environment/view are resolved by exact name before the one
@@ -207,7 +208,7 @@ Check a task:
 semaphore-ui task status --project NAME --task ID
 ```
 
-Use `--json` on commands that return structured data for CI and agent integrations. Canonical resource commands are `project`, `template`, and `task`; the legacy top-level forms remain compatibility aliases. `project list` and `template list` return API resource arrays. `project show` and `template show` return one resource. `task run`, `task status`, and `task wait` return an envelope with `project`, `template` (for `run`), `task`, and `variables` (for `run`); `template create --json` returns `project`, `template`, and safe `configuration`; `task` contains the Semaphore task ID, status, timestamps, and environment. `task output --json` returns output entries with `time`, `task_id`, and `output`. Successful commands exit `0`; task failures exit `1`; configuration, validation, lookup, network, authorization, malformed-response, and other API errors exit `2`.
+Use `--json` on commands that return structured data for CI and agent integrations. Canonical resource commands are `project`, `template`, and `task`; the former top-level commands were removed in `1.0.0`. `project list` and `template list` return API resource arrays. `project show` and `template show` return one resource. `task run`, `task status`, and `task wait` return an envelope with `project`, `template` (for `run`), `task`, and `variables` (for `run`); `template create --json` returns `project`, `template`, and safe `configuration`; `task` contains the Semaphore task ID, status, timestamps, and environment. `task output --json` returns output entries with `time`, `task_id`, and `output`. Successful commands exit `0`; task failures exit `1`; configuration, validation, lookup, network, authorization, malformed-response, and other API errors exit `2`.
 
 ## Recent Features
 

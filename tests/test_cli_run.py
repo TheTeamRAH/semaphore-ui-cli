@@ -22,6 +22,7 @@ def test_run_command_resolves_names_and_passes_variables(monkeypatch, capsys):
 
     result = cli.main(
         [
+            "task",
             "run",
             "--project",
             "configuration_management",

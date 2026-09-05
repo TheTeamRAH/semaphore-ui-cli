@@ -1139,10 +1139,6 @@ def build_parser() -> argparse.ArgumentParser:
     _add_project_show_arguments(project_show)
     project_show.set_defaults(handler=_handle_project_show)
 
-    projects = sub.add_parser("projects", help="compatibility alias for project list")
-    _add_project_list_arguments(projects)
-    projects.set_defaults(handler=_handle_project_list)
-
     template = sub.add_parser("template", help="manage templates")
     template_sub = template.add_subparsers(dest="template_command", required=True)
     template_list = template_sub.add_parser("list", help="list templates in a project")
@@ -1151,10 +1147,6 @@ def build_parser() -> argparse.ArgumentParser:
     template_show = template_sub.add_parser("show", help="show one template")
     _add_template_show_arguments(template_show)
     template_show.set_defaults(handler=_handle_template_show)
-
-    templates = sub.add_parser("templates", help="compatibility alias for template list")
-    _add_template_list_arguments(templates)
-    templates.set_defaults(handler=_handle_template_list)
 
     create = template_sub.add_parser("create", help="create a template without running it")
     create.add_argument("--project", required=True, help="exact project name")
@@ -1205,25 +1197,6 @@ def build_parser() -> argparse.ArgumentParser:
     _add_wait_arguments(task_wait)
     task_wait.set_defaults(handler=_handle_wait)
 
-    run = sub.add_parser("run", help="compatibility alias for task run")
-    _add_run_arguments(run)
-    run.set_defaults(handler=_handle_run)
-
-    status = sub.add_parser("status", help="compatibility alias for task status")
-    _add_status_arguments(status)
-    status.set_defaults(handler=_handle_status)
-
-    output = sub.add_parser("output", help="compatibility alias for task output")
-    _add_output_arguments(output)
-    output.set_defaults(handler=_handle_output)
-
-    tasks = sub.add_parser("tasks", help="compatibility alias for task list")
-    _add_task_list_arguments(tasks)
-    tasks.set_defaults(handler=_handle_tasks)
-
-    wait = sub.add_parser("wait", help="compatibility alias for task wait")
-    _add_wait_arguments(wait)
-    wait.set_defaults(handler=_handle_wait)
     return parser
 
 

@@ -1,7 +1,7 @@
 ---
 type: feature
 title: Normalize semaphore-ui CLI command conventions
-description: Introduce singular resource subcommands and preserve existing commands as compatibility aliases.
+description: Introduce singular resource subcommands and remove the superseded top-level commands.
 tags:
   - semaphore-ui
   - cli
@@ -41,15 +41,16 @@ and make future project, repository, template, and task operations harder to
 discover. A singular resource namespace with explicit verbs is familiar to CLI
 users and provides a stable place for future CRUD-style actions.
 
-The migration must not break existing scripts or the documented exit-status and
-JSON contracts. Existing command names therefore remain compatibility aliases
-while the singular resource commands become canonical.
+This migration intentionally removes the old top-level command forms. The
+canonical resource commands become the only supported public interface. This
+is a deliberate breaking change because the CLI is still pre-1.0 and the
+repository has accepted a major-version release for the cleanup.
 
 ## Goal
 
 Adopt a consistent singular-resource-plus-verb CLI convention before adding
-repository management actions, while preserving existing commands as tested
-compatibility aliases.
+repository management actions, with the old top-level forms removed as a
+deliberate breaking change.
 
 ## Canonical command model
 
@@ -79,24 +80,17 @@ and must not be implemented by this specification.
 fields, permissions, and lifecycle considerations and must receive its own
 specification if needed.
 
-## Compatibility aliases
+## Breaking-change policy
 
-The following existing commands must continue to work and dispatch to the same
-underlying behavior:
+The old top-level forms are removed rather than retained as aliases:
 
 ```text
-projects                         -> project list
-templates --project PROJECT    -> template list --project PROJECT
-tasks --project PROJECT ...     -> task list --project PROJECT ...
-run --project PROJECT ...       -> task run --project PROJECT ...
-status --project PROJECT ...    -> task status --project PROJECT ...
-wait --project PROJECT ...      -> task wait --project PROJECT ...
-output --project PROJECT ...    -> task output --project PROJECT ...
+projects, templates, tasks, run, status, wait, output
 ```
 
-Aliases must preserve accepted options, output shape, exit statuses, and
-credential-safety behavior. They may share parser builders and handlers with
-the canonical commands; they must not duplicate business logic.
+Users must migrate to the canonical resource commands. The removal is part of
+the `1.0.0` major release and must be clearly documented in the README and
+release-facing change summary.
 
 ## Scope
 
@@ -105,25 +99,23 @@ the canonical commands; they must not duplicate business logic.
 - Add the `project`, `template`, and `task` namespaces with explicit nested
   subcommands listed above.
 - Add `project show` using exact project-name lookup and read-only retrieval.
-- Add `template list` as the canonical form of the existing `templates`
-  command.
+- Add `template list` as the canonical template collection command.
 - Add `template show` using exact project/template-name lookup and read-only
   retrieval.
 - Move task listing, execution, status, waiting, and output operations under
-  the `task` namespace while retaining top-level aliases.
-- Preserve existing `template create` and `template copy` under the canonical
+  the `task` namespace and remove their top-level forms.
+- Preserve `template create` and `template copy` under the canonical
   template namespace.
 - Share argument definitions, handlers, validation, API calls, output
-  rendering, and error handling between canonical commands and aliases.
-- Document canonical commands first and label old forms as compatibility
-  aliases.
-- Add parser, handler, API, output, and compatibility regression tests.
+   rendering, and error handling within the canonical command hierarchy.
+- Document the removed top-level commands and migration mapping.
+- Add parser, handler, API, output, and removal regression tests.
 
 ### Out of scope
 
 - Repository commands or repository API changes.
 - Project creation, editing, deletion, or administration.
-- Removing or changing existing aliases.
+- Preserving compatibility aliases for the removed top-level commands.
 - Changing JSON envelopes, human-readable output semantics, exit statuses, or
   authentication behavior.
 - Adding shell completion, configuration files, or a global alias system.
@@ -134,21 +126,22 @@ the canonical commands; they must not duplicate business logic.
 
 ### Project commands
 
-`project list` must behave exactly like the current `projects` command.
+`project list` must preserve the behavior of the previous `projects`
+implementation.
 `project show --project PROJECT` must resolve the project by exact name and
 return the project object without mutation. Its `--json` and human-readable
 output behavior must follow existing conventions.
 
 ### Template commands
 
-`template list` must behave exactly like the current `templates --project`
-command. `template show` must resolve the project and template by exact name
+`template list` must preserve the behavior of the previous `templates
+--project` implementation. `template show` must resolve the project and template by exact name
 and return the template object without mutation. Existing `template create` and
 `template copy` behavior must remain unchanged.
 
 ### Task commands
 
-`task list` must behave exactly like the current `tasks` command, including
+`task list` must preserve the behavior of the previous `tasks` implementation, including
 filters and pagination metadata. `task run` must behave exactly like the
 current `run` command and retain its explicit task-execution semantics.
 `task status`, `task wait`, and `task output` must preserve the current task
@@ -159,45 +152,36 @@ configuration, lookup, API, and validation failure status `2`.
 
 1. Use argparse namespaces and `set_defaults(handler=...)` dispatch, following
    the existing CLI architecture.
-2. Factor reusable parser-option builders so aliases and canonical commands
-   cannot drift.
+2. Factor reusable parser-option builders so canonical commands cannot drift.
 3. Keep handlers thin and reuse existing client methods and validation helpers.
 4. Add exact-name project/template lookup methods only where the current client
    does not already provide them.
 5. Ensure read-only `show` commands issue only GET requests.
-6. Ensure aliases and canonical commands produce equivalent parsed inputs and
-   invoke equivalent handlers.
-7. Keep `--json` available on every command that currently supports it.
-8. Keep credentials and secret task variables out of errors, logs, and normal
+6. Keep `--json` available on every command that currently supports it.
+7. Keep credentials and secret task variables out of errors, logs, and normal
    output.
-9. Add Google-style docstrings and type hints for new public methods and
+8. Add Google-style docstrings and type hints for new public methods and
    important private helpers.
-10. Do not add deprecation warnings that alter normal output or break scripts;
-    if warnings are desired later, specify them separately.
+9. Do not add compatibility shims or deprecation warnings for removed commands.
 
 ## Acceptance criteria
 
-- `semaphore-ui --help` shows the canonical resource namespaces and clearly
-  identifies retained compatibility commands.
+- `semaphore-ui --help` shows only the canonical resource namespaces.
 - The following help commands succeed:
   - `semaphore-ui project --help`
   - `semaphore-ui template --help`
   - `semaphore-ui task --help`
   - each canonical nested subcommand's `--help`.
-- `project list` and `projects` are behaviorally equivalent.
 - `project show` performs exact project lookup and no mutation.
-- `template list` and `templates` are behaviorally equivalent.
 - `template show` performs exact project/template lookup and no mutation.
-- `task list` and `tasks` are behaviorally equivalent for every existing filter.
-- `task run` and `run` are behaviorally equivalent and retain task execution
-  confirmation boundaries in the caller/skill workflow.
-- `task status`, `task wait`, and `task output` are behaviorally equivalent to
-  their existing top-level forms.
+- Removed top-level forms fail with argparse's unsupported-command behavior.
+- Canonical task commands retain task execution confirmation boundaries in the
+  caller/skill workflow.
 - Existing `template create` and `template copy` tests continue to pass.
-- Tests prove aliases do not duplicate or alter API requests and that show
-  commands do not issue POST, PUT, PATCH, or DELETE requests.
-- JSON output, human-readable output, error messages, and exit statuses remain
-  compatible for existing commands.
+- Tests prove removed top-level forms are unavailable and show commands do not
+  issue POST, PUT, PATCH, or DELETE requests.
+- JSON output, human-readable output, and exit statuses remain unchanged for
+  commands that remain supported.
 - `uv run pytest` passes.
 - `uv build` passes.
 - `uv run semaphore-ui --help` and canonical nested help smoke tests pass.
@@ -211,14 +195,14 @@ configuration, lookup, API, and validation failure status `2`.
 2. Create a feature branch from up-to-date local `main` after authorization.
 3. Add a focused failing parser/handler test for one canonical command before
    changing production code, and confirm it fails for the missing command.
-4. Implement one canonical vertical slice, then test its legacy alias against
-   the same behavior.
-5. Repeat red-green cycles for project show, template show, task namespace
-   commands, and the remaining aliases.
+4. Implement one canonical vertical slice, then add an explicit unsupported
+   command test for the removed forms.
+5. Repeat red-green cycles for project show, template show, and task namespace
+   commands.
 6. Run focused tests, then the full test suite, build, CLI help smoke tests, and
    diff hygiene checks.
-7. Review output and request equivalence programmatically, including failure
-   paths and no-mutation guarantees.
+7. Review output and no-mutation guarantees programmatically, including
+   failure paths and unsupported-command behavior.
 8. Merge current local `main` into the feature branch before completion and
    perform the repository's mandatory release-version closeout.
 
@@ -226,13 +210,12 @@ configuration, lookup, API, and validation failure status `2`.
 
 - Adding nested commands increases help depth, but the resource grouping makes
   the interface predictable and prevents future top-level verb proliferation.
-- Aliases can drift if parsers or handlers are copied. Shared builders and
-  equivalence tests are required to prevent that failure mode.
+- Removing aliases creates a migration burden for existing callers. The
+  `1.0.0` release and README migration mapping make that break explicit.
 - `project show` and `template show` are read-only additions and should not be
   confused with future create/update operations.
-- The migration changes the public interface by addition, not removal. Existing
-  automation remains supported while documentation guides new users toward the
-  canonical form.
+- The migration removes the old public forms. Existing automation must migrate
+  before using `1.0.0`.
 
 ## Sources and repository paths
 
@@ -242,19 +225,30 @@ configuration, lookup, API, and validation failure status `2`.
 - `docs/features/2026-09-05-20-34-repository-management.md`: follow-on
   repository feature that depends on a settled CLI convention.
 
+## Amendments
+
+### 2026-09-05 — Remove compatibility aliases
+
+The user approved removing the legacy top-level commands rather than retaining
+them as compatibility aliases. This changes the migration from additive to a
+deliberate breaking change. The canonical singular resource commands remain;
+`projects`, `templates`, `tasks`, `run`, `status`, `wait`, and `output` are
+removed. The release classification changes from minor `0.6.0` to major
+`1.0.0`.
+
 ## Release Closeout
 
 - Decision: updated
-- Reason: This feature adds public canonical CLI commands and compatibility
-  aliases, changing supported CLI behavior without breaking existing forms.
-- Classification: minor
-- Previous version: `0.5.0`
-- Resulting version: `0.6.0`
+- Reason: This feature removes superseded public CLI commands and changes the
+  supported interface incompatibly.
+- Classification: major
+- Previous version: `0.6.0`
+- Resulting version: `1.0.0`
 - Authoritative version source: `pyproject.toml` `[project].version`
 - Derived artifact: `uv.lock` editable `semaphore-ui` package record updated
-  to `0.6.0`
+  to `1.0.0`
 - Branch synchronization: current `origin/main` is an ancestor of the feature
   branch; no merge conflicts remained.
-- Validation: `uv lock --check`, `uv run pytest -q` (57 passed), `uv build`,
+- Validation: `uv lock --check`, `uv run pytest -q` (63 passed), `uv build`,
   canonical CLI help smoke tests, and `git diff --check` all passed.
-- Release-facing documentation: README version example updated to `0.6.0`.
+- Release-facing documentation: README version example updated to `1.0.0`.

@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from semaphore_ui import cli
 
 
@@ -24,8 +26,7 @@ class ProjectClient:
 
 
 def test_project_show_resolves_and_prints_one_project(monkeypatch, capsys):
-    client = ProjectClient()
-    monkeypatch.setattr(cli, "_client", lambda insecure=False: client)
+    monkeypatch.setattr(cli, "_client", lambda insecure=False: ProjectClient())
 
     result = cli.main(["project", "show", "--project", "configuration_management", "--json"])
 
@@ -37,21 +38,20 @@ def test_project_show_resolves_and_prints_one_project(monkeypatch, capsys):
     }
 
 
-def test_canonical_project_list_matches_legacy_projects(monkeypatch, capsys):
+def test_project_list_prints_projects(monkeypatch, capsys):
     monkeypatch.setattr(cli, "_client", lambda insecure=False: ProjectClient())
 
     assert cli.main(["project", "list", "--json"]) == 0
-    canonical = capsys.readouterr().out
-    assert cli.main(["projects", "--json"]) == 0
-    legacy = capsys.readouterr().out
 
-    assert json.loads(canonical) == json.loads(legacy)
+    assert json.loads(capsys.readouterr().out) == [{"id": 1, "name": "configuration_management"}]
 
 
 def test_template_show_resolves_project_and_template(monkeypatch, capsys):
     monkeypatch.setattr(cli, "_client", lambda insecure=False: ProjectClient())
 
-    result = cli.main(["template", "show", "--project", "configuration_management", "--template", "hello_world", "--json"])
+    result = cli.main([
+        "template", "show", "--project", "configuration_management", "--template", "hello_world", "--json"
+    ])
 
     assert result == 0
     assert json.loads(capsys.readouterr().out) == {
@@ -61,41 +61,30 @@ def test_template_show_resolves_project_and_template(monkeypatch, capsys):
     }
 
 
-def test_canonical_template_list_matches_legacy_templates(monkeypatch, capsys):
+def test_template_list_prints_templates(monkeypatch, capsys):
     monkeypatch.setattr(cli, "_client", lambda insecure=False: ProjectClient())
 
     assert cli.main(["template", "list", "--project", "configuration_management", "--json"]) == 0
-    canonical = capsys.readouterr().out
-    assert cli.main(["templates", "--project", "configuration_management", "--json"]) == 0
-    legacy = capsys.readouterr().out
 
-    assert json.loads(canonical) == json.loads(legacy)
+    assert json.loads(capsys.readouterr().out) == [{"id": 7, "project_id": 1, "name": "hello_world"}]
 
 
-def test_canonical_task_run_matches_legacy_run(monkeypatch, capsys):
+def test_canonical_task_run_resolves_names_and_passes_variables(monkeypatch, capsys):
     monkeypatch.setattr(cli, "_client", lambda insecure=False: ProjectClient())
 
-    assert cli.main(["task", "run", "--project", "configuration_management", "--template", "hello_world", "--var", "target=host", "--json"]) == 0
-    canonical = json.loads(capsys.readouterr().out)
-    assert cli.main(["run", "--project", "configuration_management", "--template", "hello_world", "--var", "target=host", "--json"]) == 0
-    legacy = json.loads(capsys.readouterr().out)
+    assert cli.main([
+        "task", "run", "--project", "configuration_management", "--template", "hello_world",
+        "--var", "target=host", "--json"
+    ]) == 0
 
-    assert canonical == legacy
+    output = json.loads(capsys.readouterr().out)
+    assert output["task"] == {"id": 4, "status": "waiting"}
+    assert output["variables"] == {"target": "host"}
 
 
-def test_canonical_and_legacy_parsers_share_task_options_and_handlers():
-    parser = cli.build_parser()
-    canonical = parser.parse_args([
-        "task", "list", "--project", "configuration_management", "--limit", "5",
-        "--status", "success", "--template", "hello_world", "--var", "target=host",
-        "--since", "2026-01-01T00:00:00Z", "--until", "2026-01-02T00:00:00Z", "--json",
-    ])
-    legacy = parser.parse_args([
-        "tasks", "--project", "configuration_management", "--limit", "5",
-        "--status", "success", "--template", "hello_world", "--var", "target=host",
-        "--since", "2026-01-01T00:00:00Z", "--until", "2026-01-02T00:00:00Z", "--json",
-    ])
+@pytest.mark.parametrize("command", ["projects", "templates", "tasks", "run", "status", "wait", "output"])
+def test_removed_top_level_commands_are_unavailable(command):
+    with pytest.raises(SystemExit) as exc_info:
+        cli.build_parser().parse_args([command])
 
-    for field in ("project", "limit", "status", "template", "var", "since", "until", "as_json"):
-        assert getattr(canonical, field) == getattr(legacy, field)
-    assert canonical.handler is legacy.handler
+    assert exc_info.value.code == 2
