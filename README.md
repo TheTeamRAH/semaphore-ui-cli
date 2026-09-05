@@ -47,18 +47,25 @@ $ semaphore-ui --version
 semaphore-ui 0.5.0
 ```
 
-List projects and templates:
+List projects and inspect one project:
 
 ```bash
-semaphore-ui projects
-semaphore-ui templates --project configuration_management
+semaphore-ui project list
+semaphore-ui project show --project configuration_management
+```
+
+List templates in a project and inspect one template:
+
+```bash
+semaphore-ui template list --project configuration_management
+semaphore-ui template show --project configuration_management --template hello_world
 ```
 
 Discover historical tasks:
 
 ```bash
-semaphore-ui tasks --project configuration_management --limit 20
-semaphore-ui tasks --project configuration_management \
+semaphore-ui task list --project configuration_management --limit 20
+semaphore-ui task list --project configuration_management \
   --var target=hermes-001.iot.home \
   --var fact=firewall_interface \
   --json
@@ -66,7 +73,7 @@ semaphore-ui tasks --project configuration_management \
 Filter by status, template, or creation time:
 
 ```bash
-semaphore-ui tasks --project configuration_management \
+semaphore-ui task list --project configuration_management \
   --status success \
   --template hello_world \
   --since 2026-08-29T00:00:00Z \
@@ -76,12 +83,16 @@ semaphore-ui tasks --project configuration_management \
 Trigger a task by name:
 
 ```bash
-semaphore-ui run \
+semaphore-ui task run \
   --project configuration_management \
   --template hello_world \
   --var target=hermes-001.iot.home \
   --var fact=firewall_interface
 ```
+
+The legacy top-level forms `projects`, `templates`, `tasks`, `run`, `status`,
+`wait`, and `output` remain supported as compatibility aliases. New scripts
+should use the singular resource commands above.
 
 Create a task template without running it. The project, repository, inventory,
 and optional environment/view are resolved by exact name before the one
@@ -186,17 +197,17 @@ effective configuration.
 Wait for completion and retrieve output:
 
 ```bash
-semaphore-ui wait --project configuration_management --task 4
-semaphore-ui output --project configuration_management --task 4 --plain
+semaphore-ui task wait --project configuration_management --task 4
+semaphore-ui task output --project configuration_management --task 4 --plain
 ```
 
 Check a task:
 
 ```bash
-semaphore-ui status --project NAME --task ID
+semaphore-ui task status --project NAME --task ID
 ```
 
-Use `--json` on commands that return structured data for CI and agent integrations. `projects` and `templates` return API resource arrays. `run`, `status`, and `wait` return an envelope with `project`, `template` (for `run`), `task`, and `variables` (for `run`); `template create --json` returns `project`, `template`, and safe `configuration`; `task` contains the Semaphore task ID, status, timestamps, and environment. `output --json` returns output entries with `time`, `task_id`, and `output`. Successful commands exit `0`; task failures exit `1`; configuration, validation, lookup, network, authorization, malformed-response, and other API errors exit `2`.
+Use `--json` on commands that return structured data for CI and agent integrations. Canonical resource commands are `project`, `template`, and `task`; the legacy top-level forms remain compatibility aliases. `project list` and `template list` return API resource arrays. `project show` and `template show` return one resource. `task run`, `task status`, and `task wait` return an envelope with `project`, `template` (for `run`), `task`, and `variables` (for `run`); `template create --json` returns `project`, `template`, and safe `configuration`; `task` contains the Semaphore task ID, status, timestamps, and environment. `task output --json` returns output entries with `time`, `task_id`, and `output`. Successful commands exit `0`; task failures exit `1`; configuration, validation, lookup, network, authorization, malformed-response, and other API errors exit `2`.
 
 ## Recent Features
 

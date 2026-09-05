@@ -3,11 +3,11 @@
 Examples:
     List projects as JSON::
 
-        semaphore-ui --insecure projects --json
+        semaphore-ui --insecure project list --json
 
     Run a template by exact project and template names::
 
-        semaphore-ui --insecure run \\
+        semaphore-ui --insecure task run \\
             --project configuration_management \\
             --template hello_world \\
             --var target=hermes-001.iot.home \\
@@ -138,16 +138,40 @@ def _wait(client: SemaphoreClient, project_id: int, task_id: int, interval: floa
         time.sleep(interval)
 
 
-def _handle_projects(args: argparse.Namespace, client: SemaphoreClient) -> int:
-    """Handle the ``projects`` command."""
+def _handle_project_list(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """List all Semaphore projects."""
     _print(client.list_projects(), args.as_json)
     return 0
 
 
-def _handle_templates(args: argparse.Namespace, client: SemaphoreClient) -> int:
-    """Handle the ``templates`` command."""
+def _handle_projects(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Handle the legacy ``projects`` compatibility alias."""
+    return _handle_project_list(args, client)
+
+
+def _handle_project_show(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Show one Semaphore project resolved by exact name."""
+    _print(client.find_project(args.project), args.as_json)
+    return 0
+
+
+def _handle_template_list(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """List templates in a project."""
     project = client.find_project(args.project)
     _print(client.list_templates(project["id"]), args.as_json)
+    return 0
+
+
+def _handle_templates(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Handle the legacy ``templates`` compatibility alias."""
+    return _handle_template_list(args, client)
+
+
+def _handle_template_show(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Show one project template resolved by exact name."""
+    project = client.find_project(args.project)
+    template = client.find_template(project["id"], args.template)
+    _print(template, args.as_json)
     return 0
 
 
@@ -1030,6 +1054,77 @@ def _handle_wait(args: argparse.Namespace, client: SemaphoreClient) -> int:
     return 0 if task["status"].lower() == "success" else 1
 
 
+def _add_project_list_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add arguments shared by project-list commands."""
+    _add_json_argument(parser)
+
+
+def _add_project_show_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add arguments shared by project-show commands."""
+    parser.add_argument("--project", required=True, help="exact project name")
+    _add_json_argument(parser)
+
+
+def _add_template_list_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add arguments shared by template-list commands."""
+    parser.add_argument("--project", required=True, help="exact project name")
+    _add_json_argument(parser)
+
+
+def _add_template_show_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add arguments shared by template-show commands."""
+    parser.add_argument("--project", required=True, help="exact project name")
+    parser.add_argument("--template", required=True, help="exact template name")
+    _add_json_argument(parser)
+
+
+def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add arguments shared by task-run commands."""
+    parser.add_argument("--project", required=True)
+    parser.add_argument("--template", required=True)
+    parser.add_argument("--var", action="append", default=[], metavar="NAME=VALUE")
+    parser.add_argument("--wait", action="store_true")
+    parser.add_argument("--poll-interval", type=float, default=2.0)
+    parser.add_argument("--timeout", type=float, default=300.0)
+    _add_json_argument(parser)
+
+
+def _add_status_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add arguments shared by task-status commands."""
+    parser.add_argument("--project", required=True)
+    parser.add_argument("--task", required=True, type=int)
+    _add_json_argument(parser)
+
+
+def _add_output_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add arguments shared by task-output commands."""
+    parser.add_argument("--project", required=True)
+    parser.add_argument("--task", required=True, type=int)
+    parser.add_argument("--plain", action="store_true")
+    _add_json_argument(parser)
+
+
+def _add_task_list_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add arguments shared by task-list commands."""
+    parser.add_argument("--project", required=True)
+    parser.add_argument("--limit", type=int, default=20)
+    parser.add_argument("--status")
+    parser.add_argument("--template")
+    parser.add_argument("--since", help="include tasks created at or after this ISO-8601 timestamp")
+    parser.add_argument("--until", help="include tasks created at or before this ISO-8601 timestamp")
+    parser.add_argument("--var", action="append", default=[], metavar="NAME=VALUE")
+    _add_json_argument(parser)
+
+
+def _add_wait_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add arguments shared by task-wait commands."""
+    parser.add_argument("--project", required=True)
+    parser.add_argument("--task", required=True, type=int)
+    parser.add_argument("--poll-interval", type=float, default=2.0)
+    parser.add_argument("--timeout", type=float, default=300.0)
+    _add_json_argument(parser)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser and dispatch table.
 
@@ -1045,17 +1140,32 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    projects = sub.add_parser("projects", help="list projects")
-    _add_json_argument(projects)
+    project = sub.add_parser("project", help="manage projects")
+    project_sub = project.add_subparsers(dest="project_command", required=True)
+    project_list = project_sub.add_parser("list", help="list projects")
+    _add_project_list_arguments(project_list)
+    project_list.set_defaults(handler=_handle_project_list)
+    project_show = project_sub.add_parser("show", help="show one project")
+    _add_project_show_arguments(project_show)
+    project_show.set_defaults(handler=_handle_project_show)
+
+    projects = sub.add_parser("projects", help="compatibility alias for project list")
+    _add_project_list_arguments(projects)
     projects.set_defaults(handler=_handle_projects)
 
-    templates = sub.add_parser("templates", help="list templates in a project")
-    templates.add_argument("--project", required=True)
-    _add_json_argument(templates)
+    template = sub.add_parser("template", help="manage templates")
+    template_sub = template.add_subparsers(dest="template_command", required=True)
+    template_list = template_sub.add_parser("list", help="list templates in a project")
+    _add_template_list_arguments(template_list)
+    template_list.set_defaults(handler=_handle_template_list)
+    template_show = template_sub.add_parser("show", help="show one template")
+    _add_template_show_arguments(template_show)
+    template_show.set_defaults(handler=_handle_template_show)
+
+    templates = sub.add_parser("templates", help="compatibility alias for template list")
+    _add_template_list_arguments(templates)
     templates.set_defaults(handler=_handle_templates)
 
-    template = sub.add_parser("template", help="manage a task template")
-    template_sub = template.add_subparsers(dest="template_command", required=True)
     create = template_sub.add_parser("create", help="create a template without running it")
     create.add_argument("--project", required=True, help="exact project name")
     create.add_argument(
@@ -1087,46 +1197,42 @@ def build_parser() -> argparse.ArgumentParser:
     _add_json_argument(copy)
     copy.set_defaults(handler=_handle_template_copy)
 
-    run = sub.add_parser("run", help="trigger a task template by project and template name")
-    run.add_argument("--project", required=True)
-    run.add_argument("--template", required=True)
-    run.add_argument("--var", action="append", default=[], metavar="NAME=VALUE")
-    run.add_argument("--wait", action="store_true")
-    run.add_argument("--poll-interval", type=float, default=2.0)
-    run.add_argument("--timeout", type=float, default=300.0)
-    _add_json_argument(run)
+    task = sub.add_parser("task", help="manage tasks")
+    task_sub = task.add_subparsers(dest="task_command", required=True)
+    task_run = task_sub.add_parser("run", help="trigger a task template")
+    _add_run_arguments(task_run)
+    task_run.set_defaults(handler=_handle_run)
+    task_status = task_sub.add_parser("status", help="retrieve task status")
+    _add_status_arguments(task_status)
+    task_status.set_defaults(handler=_handle_status)
+    task_output = task_sub.add_parser("output", help="retrieve task output")
+    _add_output_arguments(task_output)
+    task_output.set_defaults(handler=_handle_output)
+    task_list = task_sub.add_parser("list", help="list historical tasks")
+    _add_task_list_arguments(task_list)
+    task_list.set_defaults(handler=_handle_tasks)
+    task_wait = task_sub.add_parser("wait", help="wait for a task to finish")
+    _add_wait_arguments(task_wait)
+    task_wait.set_defaults(handler=_handle_wait)
+
+    run = sub.add_parser("run", help="compatibility alias for task run")
+    _add_run_arguments(run)
     run.set_defaults(handler=_handle_run)
 
-    status = sub.add_parser("status", help="retrieve task status")
-    status.add_argument("--project", required=True)
-    status.add_argument("--task", required=True, type=int)
-    _add_json_argument(status)
+    status = sub.add_parser("status", help="compatibility alias for task status")
+    _add_status_arguments(status)
     status.set_defaults(handler=_handle_status)
 
-    output = sub.add_parser("output", help="retrieve task output")
-    output.add_argument("--project", required=True)
-    output.add_argument("--task", required=True, type=int)
-    output.add_argument("--plain", action="store_true")
-    _add_json_argument(output)
+    output = sub.add_parser("output", help="compatibility alias for task output")
+    _add_output_arguments(output)
     output.set_defaults(handler=_handle_output)
 
-    tasks = sub.add_parser("tasks", help="list historical tasks in a project")
-    tasks.add_argument("--project", required=True)
-    tasks.add_argument("--limit", type=int, default=20)
-    tasks.add_argument("--status")
-    tasks.add_argument("--template")
-    tasks.add_argument("--since", help="include tasks created at or after this ISO-8601 timestamp")
-    tasks.add_argument("--until", help="include tasks created at or before this ISO-8601 timestamp")
-    tasks.add_argument("--var", action="append", default=[], metavar="NAME=VALUE")
-    _add_json_argument(tasks)
+    tasks = sub.add_parser("tasks", help="compatibility alias for task list")
+    _add_task_list_arguments(tasks)
     tasks.set_defaults(handler=_handle_tasks)
 
-    wait = sub.add_parser("wait", help="wait for a task to reach a terminal state")
-    wait.add_argument("--project", required=True)
-    wait.add_argument("--task", required=True, type=int)
-    wait.add_argument("--poll-interval", type=float, default=2.0)
-    wait.add_argument("--timeout", type=float, default=300.0)
-    _add_json_argument(wait)
+    wait = sub.add_parser("wait", help="compatibility alias for task wait")
+    _add_wait_arguments(wait)
     wait.set_defaults(handler=_handle_wait)
     return parser
 
