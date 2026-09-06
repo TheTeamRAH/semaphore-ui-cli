@@ -28,7 +28,7 @@ sources:
   - id: semaphore-api
     resource: https://docs.semaphoreui.com/reference/api
     title: Semaphore API reference
-status: in-progress
+status: completed
 author: whose-footprints-are-these
 ---
 
@@ -235,6 +235,20 @@ It is additive to the `1.0.0` CLI and should normally receive a minor version
 increment from the current release. The removed pre-1.0.0 top-level commands
 remain unsupported. The authoritative version and lockfile changes must be
 handled during the repository’s release closeout after implementation.
+
+## Release Closeout
+
+- Status: `updated` and passed.
+- Decision and classification: the feature adds backward-compatible public
+  repository commands, so the release classification is minor.
+- Version: `1.0.0` to `1.1.0`.
+- Authoritative source: `pyproject.toml`; `uv.lock` was regenerated as the
+  required derived artifact. `src/semaphore_ui/__init__.py` remains metadata-derived.
+- Synchronization: `git merge --no-edit main` reported `Already up to date.`;
+  local `main` is an ancestor of the feature branch.
+- Validation: `uv lock --check`, `uv run pytest`, `uv build`, repository help
+  smoke tests, and `git diff --check` passed. The full suite passed with 74 tests.
+- Build distributions were validation-only and are not included in the commit.
 
 ## Amendments
 
