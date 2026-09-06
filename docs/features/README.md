@@ -12,6 +12,7 @@ sources: []
 
 | Date | Purpose | Spec | Author |
 | --- | --- | --- | --- |
+| 2026-09-06-17-32 | Add Semaphore repository resource commands | [Specification](2026-09-06-17-32-repository-resource-commands.md) | whose-footprints-are-these |
 | 2026-09-05-20-55 | Normalize semaphore-ui CLI command conventions | [Specification](2026-09-05-20-55-cli-command-conventions.md) | whose-footprints-are-these |
 | 2026-09-04-23-00 | Add safe Semaphore template copy command | [Specification](2026-09-04-23-00-template-copy.md) | whose-footprints-are-these |
 | 2026-08-31-21-20 | Support survey defaults and vaults in template creation | [Specification](2026-08-31-21-20-template-survey-defaults-and-vaults.md) | Jibba Jabber |

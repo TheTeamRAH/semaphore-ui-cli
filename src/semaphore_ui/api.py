@@ -174,6 +174,28 @@ def _require_template(template: Any, project_id: int) -> dict[str, Any]:
     return template
 
 
+def _require_repository(repository: Any, project_id: int) -> dict[str, Any]:
+    """Validate a created repository response and return it."""
+    if not isinstance(repository, dict):
+        raise APIError("Semaphore repository response was not an object")
+    _require_positive_id(repository.get("id"), "id", "repository")
+    response_project_id = _require_positive_id(repository.get("project_id"), "project_id", "repository")
+    if response_project_id != project_id:
+        raise APIError("Semaphore repository response project_id did not match the requested project")
+    require_nonempty_string(
+        repository.get("name"), APIError, "Semaphore repository response did not contain a non-empty name"
+    )
+    require_nonempty_string(
+        repository.get("git_url"), APIError, "Semaphore repository response did not contain a non-empty git_url"
+    )
+    require_nonempty_string(
+        repository.get("git_branch"), APIError, "Semaphore repository response did not contain a non-empty git_branch"
+    )
+    if "ssh_key_id" in repository and repository["ssh_key_id"] is not None:
+        _require_positive_id(repository["ssh_key_id"], "ssh_key_id", "repository")
+    return repository
+
+
 def _schema_properties(document: dict[str, Any], schema: Any) -> dict[str, Any]:
     """Return the merged properties declared by a Swagger schema fragment.
 
@@ -417,8 +439,14 @@ class SemaphoreClient:
             reason = getattr(exc, "reason", str(exc))
             raise APIError(f"Unable to reach Semaphore API: {reason}") from exc
         try:
-            return json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            decoded = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise APIError(f"Semaphore API returned invalid JSON for {method} {path}") from exc
+        if not decoded.strip():
+            return None
+        try:
+            return json.loads(decoded)
+        except json.JSONDecodeError as exc:
             raise APIError(f"Semaphore API returned invalid JSON for {method} {path}") from exc
 
     @staticmethod
@@ -474,6 +502,28 @@ class SemaphoreClient:
     def find_repository(self, project_id: int, name: str) -> dict[str, Any]:
         """Resolve a repository by exact project-scoped name."""
         return self._filter_exact(self.list_repositories(project_id), name, "repository")
+
+    def create_repository(self, project_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        """Create a repository in a project and validate its identity."""
+        repository = _require_repository(
+            self._request("POST", f"/api/project/{project_id}/repositories", payload), project_id
+        )
+        for field in ("name", "git_url", "git_branch"):
+            if repository[field] != payload[field]:
+                raise APIError(f"Semaphore repository response {field} did not match the request")
+        if "ssh_key_id" in payload and repository.get("ssh_key_id") != payload["ssh_key_id"]:
+            raise APIError("Semaphore repository response ssh_key_id did not match the request")
+        return repository
+
+    def update_repository(
+        self, project_id: int, repository_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Update a repository and read back its persisted configuration."""
+        project_id = _require_positive_id(project_id, "project_id", "repository")
+        repository_id = _require_positive_id(repository_id, "id", "repository")
+        self._request("PUT", f"/api/project/{project_id}/repositories/{repository_id}", payload)
+        repository = self.find_repository(project_id, payload["name"])
+        return _require_repository(repository, project_id)
 
     def list_inventories(self, project_id: int) -> list[dict[str, Any]]:
         """Return inventories available within a project."""
