@@ -28,7 +28,7 @@ sources:
   - id: semaphore-repositories
     resource: https://semaphoreui.com/docs/user-guide/repositories
     title: Semaphore repository resources
-status: in-progress
+status: completed
 author: whose-footprints-are-these
 ---
 
@@ -223,12 +223,27 @@ closeout decision. Removed pre-`1.0.0` commands remain unsupported.
 
 ## Open questions
 
-- Confirm whether access-key list/show should remain in this feature after
-  review, or be split into a separate credential-metadata feature. They are
-  included provisionally because repository creation accepts access-key names
-  and exact discovery is otherwise unavailable through the CLI.
-- Confirm the deployed Semaphore template update schema and whether the server
-  requires a full object or accepts partial updates.
+None. Access-key list/show remain in scope because repository creation accepts
+access-key names, and template update uses the deployed full-object update
+behavior with explicit `204 No Content` handling and read-back verification.
+
+## Release Closeout
+
+- Status: `updated` / `passed`.
+- Decision: minor release; this adds backward-compatible public CLI commands.
+- Previous version: `1.1.0`.
+- Resulting version: `1.2.0`.
+- Authoritative source: `[project].version` in `pyproject.toml`.
+- Derived artifact: `uv.lock` editable `semaphore-ui` package record updated to
+  `1.2.0` using `uv lock`.
+- Local `main` synchronization: complete; `main` was already an ancestor of the
+  feature branch and no merge operation was in progress.
+- Validation: `uv run pytest -q` (`79 passed`), `uv lock --check`, `uv build`,
+  all new-command help smoke tests, and `git diff --check` passed.
+- Live validation: not repeated for this feature; no live mutations or task
+  executions were performed.
+- External delivery: not yet authorized or performed; branch publication and
+  pull-request creation remain separate remote operations.
 
 ## Amendments
 
