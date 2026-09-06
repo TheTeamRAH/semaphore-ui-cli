@@ -601,6 +601,16 @@ class SemaphoreClient:
             self._request("POST", f"/api/project/{project_id}/templates", payload), project_id
         )
 
+    def update_template(
+        self, project_id: int, template_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Update a template and read back its persisted configuration."""
+        project_id = _require_positive_id(project_id, "project_id", "template")
+        template_id = _require_positive_id(template_id, "id", "template")
+        self._request("PUT", f"/api/project/{project_id}/templates/{template_id}", payload)
+        template = self.find_template(project_id, payload["name"])
+        return _require_template(template, project_id)
+
     def assert_template_create_supported(self, payload: dict[str, Any]) -> None:
         """Check that the deployed API supports the pending template request.
 

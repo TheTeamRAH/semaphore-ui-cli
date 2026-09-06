@@ -28,7 +28,7 @@ sources:
   - id: semaphore-repositories
     resource: https://semaphoreui.com/docs/user-guide/repositories
     title: Semaphore repository resources
-status: proposed
+status: in-progress
 author: whose-footprints-are-these
 ---
 
@@ -232,4 +232,7 @@ closeout decision. Removed pre-`1.0.0` commands remain unsupported.
 
 ## Amendments
 
-None.
+2026-09-06: Implementation started after specification review. Access-key
+list/show remain included because repository creation accepts exact access-key
+names. Inventory content is excluded from output; only identity and safe
+metadata are exposed.

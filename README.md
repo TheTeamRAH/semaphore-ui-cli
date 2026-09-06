@@ -217,6 +217,11 @@ semaphore-ui template copy \
   --template hello_world \
   --name hello_world_copy \
   --json
+semaphore-ui template update \
+  --project configuration_management \
+  --template hello_world \
+  --git-branch feature_branch_cm \
+  --json
 ```
 
 Template copying never copies credentials, vault passwords, vault scripts, or
@@ -225,6 +230,25 @@ configuration causes a validation error before the create request.
 
 The copy command reports the source and created template identities plus safe
 effective configuration.
+
+Update changes the configured branch/ref of an existing template in place. The
+CLI preserves the other supported template configuration, reads the resource
+back after the update, and verifies the persisted result.
+
+Discover project inventories and access-key identities without exposing
+inventory content or credentials:
+
+```bash
+semaphore-ui inventory list --project configuration_management --json
+semaphore-ui inventory show --project configuration_management \
+  --inventory configuration_management --json
+semaphore-ui access-key list --project configuration_management --json
+semaphore-ui access-key show --project configuration_management \
+  --access-key "deploy key" --json
+```
+
+Inventory commands return identity and safe metadata only; access-key commands
+never return private keys, passwords, tokens, or equivalent secret material.
 
 Wait for completion and retrieve output:
 
@@ -239,7 +263,7 @@ Check a task:
 semaphore-ui task status --project NAME --task ID
 ```
 
-Use `--json` on commands that return structured data for CI and agent integrations. Canonical resource commands are `project`, `template`, and `task`; the former top-level commands were removed in `1.0.0`. `project list` and `template list` return API resource arrays. `project show` and `template show` return one resource. `task run`, `task status`, and `task wait` return an envelope with `project`, `template` (for `run`), `task`, and `variables` (for `run`); `template create --json` returns `project`, `template`, and safe `configuration`; `task` contains the Semaphore task ID, status, timestamps, and environment. `task output --json` returns output entries with `time`, `task_id`, and `output`. Successful commands exit `0`; task failures exit `1`; configuration, validation, lookup, network, authorization, malformed-response, and other API errors exit `2`.
+Use `--json` on commands that return structured data for CI and agent integrations. Canonical resource commands are `project`, `repository`, `template`, `inventory`, `access-key`, and `task`; the former top-level commands were removed in `1.0.0`. List/show commands resolve project-scoped resources by exact name. `task run`, `task status`, and `task wait` return an envelope with `project`, `template` (for `run`), `task`, and `variables` (for `run`); template and repository mutations return safe identity/configuration envelopes and verify read-back state. Inventory and access-key output is metadata-only. `task output --json` returns output entries with `time`, `task_id`, and `output`. Successful commands exit `0`; task failures exit `1`; configuration, validation, lookup, network, authorization, malformed-response, and other API errors exit `2`.
 
 ## Recent Features
 

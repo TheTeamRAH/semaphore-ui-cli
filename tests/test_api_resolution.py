@@ -69,3 +69,28 @@ def test_updates_repository_with_full_payload_and_reads_back():
         "git_url": "git@example/repository.git", "git_branch": "feature_branch_cm", "ssh_key_id": 3,
     })
     assert repository["git_branch"] == "feature_branch_cm"
+
+
+def test_updates_template_with_full_payload_and_reads_back():
+    responses = {
+        ("PUT", "/api/project/1/templates/7"): None,
+        ("GET", "/api/project/1/templates"): [{
+            "id": 7, "project_id": 1, "name": "hello_world",
+        }],
+    }
+    client = SemaphoreClient("https://semaphore.example", "secret", responses=responses)
+
+    template = client.update_template(1, 7, {"id": 7, "project_id": 1, "name": "hello_world"})
+
+    assert template == {"id": 7, "project_id": 1, "name": "hello_world"}
+
+
+def test_lists_project_inventories_and_access_keys():
+    responses = {
+        ("GET", "/api/project/1/inventory"): [{"id": 1, "project_id": 1, "name": "production"}],
+        ("GET", "/api/project/1/keys?sort=name&order=asc"): [{"id": 3, "project_id": 1, "name": "deploy key"}],
+    }
+    client = SemaphoreClient("https://semaphore.example", "secret", responses=responses)
+
+    assert client.list_inventories(1)[0]["name"] == "production"
+    assert client.list_access_keys(1)[0]["name"] == "deploy key"

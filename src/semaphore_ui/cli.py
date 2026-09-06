@@ -277,6 +277,54 @@ def _handle_template_show(args: argparse.Namespace, client: SemaphoreClient) -> 
     return 0
 
 
+def _safe_inventory_configuration(inventory: dict[str, Any]) -> dict[str, Any]:
+    """Return non-secret inventory identity and configuration fields."""
+    return {
+        key: inventory[key]
+        for key in ("id", "project_id", "name", "type", "template_id")
+        if key in inventory
+    }
+
+
+def _safe_access_key_identity(access_key: dict[str, Any]) -> dict[str, Any]:
+    """Return non-secret access-key identity fields."""
+    return {
+        key: access_key[key]
+        for key in ("id", "project_id", "name", "type", "login", "owner")
+        if key in access_key
+    }
+
+
+def _handle_inventory_list(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """List inventories in a project without exposing credentials."""
+    project = client.find_project(args.project)
+    _print([_safe_inventory_configuration(item) for item in client.list_inventories(project["id"])], args.as_json)
+    return 0
+
+
+def _handle_inventory_show(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Show one project inventory without exposing credentials."""
+    project = client.find_project(args.project)
+    inventory = client.find_inventory(project["id"], args.inventory)
+    _print(_safe_inventory_configuration(inventory), args.as_json)
+    return 0
+
+
+def _handle_access_key_list(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """List access-key identities in a project."""
+    project = client.find_project(args.project)
+    _print([_safe_access_key_identity(item) for item in client.list_access_keys(project["id"])], args.as_json)
+    return 0
+
+
+def _handle_access_key_show(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Show one access-key identity without exposing key material."""
+    project = client.find_project(args.project)
+    access_key = client.find_access_key(project["id"], args.access_key)
+    _print(_safe_access_key_identity(access_key), args.as_json)
+    return 0
+
+
 _TEMPLATE_FIELDS = {
     "name",
     "repository",
@@ -906,7 +954,11 @@ def _template_copy_request(source: dict[str, Any], destination: str) -> dict[str
         "playbook": source["playbook"],
         "type": source.get("type", ""),
         "app": _DEFAULT_TEMPLATE_APP,
-        **{field: source[field] for field in ("description", "git_branch", "arguments") if field in source},
+        **{
+            field: source[field]
+            for field in ("description", "git_branch", "arguments", "allow_override_branch_in_task")
+            if field in source
+        },
     }
     optional = {
         field: copier(source[field])
@@ -930,7 +982,11 @@ def _safe_template_copy_configuration(payload: dict[str, Any]) -> dict[str, Any]
         for key in ("repository_id", "inventory_id", "environment_id", "playbook", "type", "app")
         if key in payload
     }
-    configuration.update({field: payload[field] for field in ("description", "git_branch") if field in payload})
+    configuration.update({
+        field: payload[field]
+        for field in ("description", "git_branch", "allow_override_branch_in_task")
+        if field in payload
+    })
     configuration.update({field: payload[field] for field in ("survey_vars", "task_params") if field in payload})
     if "vaults" in payload:
         configuration["vaults"] = [
@@ -976,6 +1032,30 @@ def _handle_template_copy(args: argparse.Namespace, client: SemaphoreClient) -> 
         _print(result, True)
     else:
         print(f"Created template {created['id']}: {created['name']} from {source['name']}")
+    return 0
+
+
+def _handle_template_update(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Update a template's branch and verify its persisted configuration."""
+    project = client.find_project(args.project)
+    project_id = _resource_id(project, "project")
+    source = client.find_template(project_id, args.template)
+    template_id = _resource_id(source, "template")
+    payload = _template_copy_request(source, source["name"])
+    payload.update({"id": template_id, "project_id": project_id, "git_branch": args.git_branch})
+    updated = client.update_template(project_id, template_id, payload)
+    if updated.get("id") != template_id or updated.get("project_id") != project_id:
+        raise ValueError("updated template identity did not match the request")
+    expected = _safe_template_copy_configuration(payload)
+    actual = _safe_template_copy_configuration(updated)
+    if actual != expected:
+        raise ValueError("updated template did not match the requested configuration")
+    result = {
+        "project": project,
+        "template": {key: updated[key] for key in ("id", "project_id", "name")},
+        "configuration": actual,
+    }
+    _print(result, args.as_json)
     return 0
 
 
@@ -1294,6 +1374,30 @@ def build_parser() -> argparse.ArgumentParser:
     _add_json_argument(repository_update)
     repository_update.set_defaults(handler=_handle_repository_update)
 
+    inventory = sub.add_parser("inventory", help="inspect project inventories")
+    inventory_sub = inventory.add_subparsers(dest="inventory_command", required=True)
+    inventory_list = inventory_sub.add_parser("list", help="list inventories in a project")
+    inventory_list.add_argument("--project", required=True, help="exact project name")
+    _add_json_argument(inventory_list)
+    inventory_list.set_defaults(handler=_handle_inventory_list)
+    inventory_show = inventory_sub.add_parser("show", help="show one inventory")
+    inventory_show.add_argument("--project", required=True, help="exact project name")
+    inventory_show.add_argument("--inventory", required=True, help="exact inventory name")
+    _add_json_argument(inventory_show)
+    inventory_show.set_defaults(handler=_handle_inventory_show)
+
+    access_key = sub.add_parser("access-key", help="inspect project access-key identities")
+    access_key_sub = access_key.add_subparsers(dest="access_key_command", required=True)
+    access_key_list = access_key_sub.add_parser("list", help="list access-key identities in a project")
+    access_key_list.add_argument("--project", required=True, help="exact project name")
+    _add_json_argument(access_key_list)
+    access_key_list.set_defaults(handler=_handle_access_key_list)
+    access_key_show = access_key_sub.add_parser("show", help="show one access-key identity")
+    access_key_show.add_argument("--project", required=True, help="exact project name")
+    access_key_show.add_argument("--access-key", required=True, help="exact access-key name")
+    _add_json_argument(access_key_show)
+    access_key_show.set_defaults(handler=_handle_access_key_show)
+
     template = sub.add_parser("template", help="manage templates")
     template_sub = template.add_subparsers(dest="template_command", required=True)
     template_list = template_sub.add_parser("list", help="list templates in a project")
@@ -1333,6 +1437,12 @@ def build_parser() -> argparse.ArgumentParser:
     copy.add_argument("--name", required=True, help="new template name")
     _add_json_argument(copy)
     copy.set_defaults(handler=_handle_template_copy)
+    template_update = template_sub.add_parser("update", help="update a template resource")
+    template_update.add_argument("--project", required=True, help="exact project name")
+    template_update.add_argument("--template", required=True, help="exact template name")
+    template_update.add_argument("--git-branch", required=True, help="new Git branch or ref")
+    _add_json_argument(template_update)
+    template_update.set_defaults(handler=_handle_template_update)
 
     task = sub.add_parser("task", help="manage tasks")
     task_sub = task.add_subparsers(dest="task_command", required=True)
