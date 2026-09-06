@@ -150,6 +150,118 @@ def _handle_project_show(args: argparse.Namespace, client: SemaphoreClient) -> i
     return 0
 
 
+def _safe_repository_configuration(repository: dict[str, Any]) -> dict[str, Any]:
+    """Return non-secret repository configuration for command output."""
+    return {
+        key: repository[key]
+        for key in ("id", "project_id", "name", "git_url", "git_branch", "ssh_key_id")
+        if key in repository
+    }
+
+
+def _handle_repository_list(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """List repositories in a project."""
+    project = client.find_project(args.project)
+    repositories = client.list_repositories(project["id"])
+    _print([_safe_repository_configuration(repository) for repository in repositories], args.as_json)
+    return 0
+
+
+def _handle_repository_show(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Show one project repository resolved by exact name."""
+    project = client.find_project(args.project)
+    repository = client.find_repository(project["id"], args.repository)
+    _print(_safe_repository_configuration(repository), args.as_json)
+    return 0
+
+
+def _repository_payload(
+    source: dict[str, Any], destination: str, branch: str | None = None
+) -> dict[str, Any]:
+    """Build a repository-create payload from safe source configuration."""
+    payload: dict[str, Any] = {
+        "name": require_nonempty_string(destination, ValueError, "repository name must be a non-empty string"),
+        "git_url": require_nonempty_string(source.get("git_url"), ValueError, "repository git URL must be a non-empty string"),
+        "git_branch": require_nonempty_string(
+            branch if branch is not None else source.get("git_branch"),
+            ValueError,
+            "repository git branch must be a non-empty string",
+        ),
+    }
+    if "ssh_key_id" in source and source["ssh_key_id"] is not None:
+        payload["ssh_key_id"] = require_positive_int(
+            source["ssh_key_id"], ValueError, "repository access key id must be positive"
+        )
+    return payload
+
+
+def _create_repository(
+    args: argparse.Namespace, client: SemaphoreClient, project: dict[str, Any], payload: dict[str, Any]
+) -> int:
+    """Create one repository and print safe result details."""
+    request = {"project_id": project["id"], **payload}
+    created = client.create_repository(project["id"], request)
+    result = {
+        "project": project,
+        "repository": {key: created[key] for key in ("id", "project_id", "name")},
+        "configuration": _safe_repository_configuration(created),
+    }
+    _print(result, args.as_json)
+    return 0
+
+
+def _handle_repository_create(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Create a repository resource in an existing project."""
+    project = client.find_project(args.project)
+    repositories = client.list_repositories(project["id"])
+    if any(repository.get("name") == args.name for repository in repositories):
+        raise ValueError(f"repository already exists: {args.name}")
+    source = {"git_url": args.git_url, "git_branch": args.git_branch}
+    if args.access_key:
+        source["ssh_key_id"] = require_positive_int(
+            client.find_access_key(project["id"], args.access_key).get("id"),
+            ValueError,
+            "resolved access key did not contain a positive id",
+        )
+    return _create_repository(args, client, project, _repository_payload(source, args.name))
+
+
+def _handle_repository_copy(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Copy one repository resource, optionally overriding its branch."""
+    if args.repository == args.name:
+        raise ValueError("repository copy source and destination names must differ")
+    project = client.find_project(args.project)
+    repositories = client.list_repositories(project["id"])
+    if any(repository.get("name") == args.name for repository in repositories):
+        raise ValueError(f"repository already exists: {args.name}")
+    source = client.find_repository(project["id"], args.repository)
+    payload = _repository_payload(source, args.name, args.git_branch)
+    return _create_repository(args, client, project, payload)
+
+
+def _handle_repository_update(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Update a repository's branch and verify the persisted configuration."""
+    project = client.find_project(args.project)
+    repository = client.find_repository(project["id"], args.repository)
+    repository_id = require_positive_int(repository.get("id"), ValueError, "repository id must be positive")
+    payload = _safe_repository_configuration(repository)
+    payload["project_id"] = project["id"]
+    payload["git_branch"] = require_nonempty_string(args.git_branch, ValueError, "repository git branch must be a non-empty string")
+    updated = client.update_repository(project["id"], repository_id, payload)
+    if updated.get("id") != repository_id or updated.get("project_id") != project["id"]:
+        raise ValueError("updated repository identity did not match the request")
+    persisted = client.find_repository(project["id"], args.repository)
+    if _safe_repository_configuration(persisted) != _safe_repository_configuration(updated):
+        raise ValueError("updated repository did not match the requested configuration")
+    result = {
+        "project": project,
+        "repository": {key: persisted[key] for key in ("id", "project_id", "name")},
+        "configuration": _safe_repository_configuration(persisted),
+    }
+    _print(result, args.as_json)
+    return 0
+
+
 def _handle_template_list(args: argparse.Namespace, client: SemaphoreClient) -> int:
     """List templates in a project."""
     project = client.find_project(args.project)
@@ -1055,6 +1167,19 @@ def _add_project_show_arguments(parser: argparse.ArgumentParser) -> None:
     _add_json_argument(parser)
 
 
+def _add_repository_list_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add arguments shared by repository-list commands."""
+    parser.add_argument("--project", required=True, help="exact project name")
+    _add_json_argument(parser)
+
+
+def _add_repository_show_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add arguments shared by repository-show commands."""
+    parser.add_argument("--project", required=True, help="exact project name")
+    parser.add_argument("--repository", required=True, help="exact repository name")
+    _add_json_argument(parser)
+
+
 def _add_template_list_arguments(parser: argparse.ArgumentParser) -> None:
     """Add arguments shared by template-list commands."""
     parser.add_argument("--project", required=True, help="exact project name")
@@ -1138,6 +1263,36 @@ def build_parser() -> argparse.ArgumentParser:
     project_show = project_sub.add_parser("show", help="show one project")
     _add_project_show_arguments(project_show)
     project_show.set_defaults(handler=_handle_project_show)
+
+    repository = sub.add_parser("repository", help="manage repositories")
+    repository_sub = repository.add_subparsers(dest="repository_command", required=True)
+    repository_list = repository_sub.add_parser("list", help="list repositories in a project")
+    _add_repository_list_arguments(repository_list)
+    repository_list.set_defaults(handler=_handle_repository_list)
+    repository_show = repository_sub.add_parser("show", help="show one repository")
+    _add_repository_show_arguments(repository_show)
+    repository_show.set_defaults(handler=_handle_repository_show)
+    repository_create = repository_sub.add_parser("create", help="create a repository resource")
+    repository_create.add_argument("--project", required=True, help="exact project name")
+    repository_create.add_argument("--name", required=True, help="new repository name")
+    repository_create.add_argument("--git-url", required=True, help="Git repository URL")
+    repository_create.add_argument("--git-branch", required=True, help="Git branch or ref")
+    repository_create.add_argument("--access-key", help="exact project access-key name")
+    _add_json_argument(repository_create)
+    repository_create.set_defaults(handler=_handle_repository_create)
+    repository_copy = repository_sub.add_parser("copy", help="copy a repository resource")
+    repository_copy.add_argument("--project", required=True, help="exact project name")
+    repository_copy.add_argument("--repository", required=True, help="exact source repository name")
+    repository_copy.add_argument("--name", required=True, help="new repository name")
+    repository_copy.add_argument("--git-branch", help="branch or ref override")
+    _add_json_argument(repository_copy)
+    repository_copy.set_defaults(handler=_handle_repository_copy)
+    repository_update = repository_sub.add_parser("update", help="update a repository resource")
+    repository_update.add_argument("--project", required=True, help="exact project name")
+    repository_update.add_argument("--repository", required=True, help="exact repository name")
+    repository_update.add_argument("--git-branch", required=True, help="new Git branch or ref")
+    _add_json_argument(repository_update)
+    repository_update.set_defaults(handler=_handle_repository_update)
 
     template = sub.add_parser("template", help="manage templates")
     template_sub = template.add_subparsers(dest="template_command", required=True)

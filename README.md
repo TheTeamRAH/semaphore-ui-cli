@@ -44,7 +44,7 @@ Check the installed version:
 
 ```console
 $ semaphore-ui --version
-semaphore-ui 1.0.0
+semaphore-ui 1.1.0
 ```
 
 List projects and inspect one project:
@@ -60,6 +60,37 @@ List templates in a project and inspect one template:
 semaphore-ui template list --project configuration_management
 semaphore-ui template show --project configuration_management --template hello_world
 ```
+
+Manage project-scoped Semaphore repository resources. These commands configure
+Semaphore repository records; they do not create or modify remote Git
+repositories:
+
+```bash
+semaphore-ui repository list --project configuration_management
+semaphore-ui repository show --project configuration_management --repository configuration_management
+semaphore-ui repository create \
+  --project configuration_management \
+  --name fb_configuration_management \
+  --git-url git@bitbucket.org:adamhills/configuration_management.git \
+  --git-branch master
+semaphore-ui repository copy \
+  --project configuration_management \
+  --repository configuration_management \
+  --name fb_configuration_management \
+  --git-branch feature_branch_cm
+semaphore-ui repository update \
+  --project configuration_management \
+  --repository fb_configuration_management \
+  --git-branch feature_branch_cm
+```
+
+Repository copy preserves the source Git URL and access-key reference while
+allowing an explicit branch/ref override. Credentials and private key material
+are never copied or displayed. Repository creation and copying reject existing
+destination names and do not run tasks. Repository update changes only the
+configured branch/ref of an existing Semaphore repository resource; it does not
+modify the remote Git repository. The CLI reads the resource first, sends the
+full required configuration, and verifies the branch after the update.
 
 Discover historical tasks:
 
@@ -214,6 +245,7 @@ Use `--json` on commands that return structured data for CI and agent integratio
 
 | Date | Purpose | Spec | Author |
 | --- | --- | --- | --- |
+| 2026-09-06-17-32 | Add Semaphore repository resource commands | [Specification](docs/features/2026-09-06-17-32-repository-resource-commands.md) | whose-footprints-are-these |
 | 2026-09-05-20-55 | Normalize semaphore-ui CLI command conventions | [Specification](docs/features/2026-09-05-20-55-cli-command-conventions.md) | whose-footprints-are-these |
 | 2026-09-04-23-00 | Add safe Semaphore template copy command | [Specification](docs/features/2026-09-04-23-00-template-copy.md) | whose-footprints-are-these |
 | 2026-08-31-21-20 | Support survey defaults and vaults in template creation | [Specification](docs/features/2026-08-31-21-20-template-survey-defaults-and-vaults.md) | Jibba Jabber |
