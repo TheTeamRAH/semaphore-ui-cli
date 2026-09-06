@@ -44,21 +44,28 @@ Check the installed version:
 
 ```console
 $ semaphore-ui --version
-semaphore-ui 0.5.0
+semaphore-ui 1.0.0
 ```
 
-List projects and templates:
+List projects and inspect one project:
 
 ```bash
-semaphore-ui projects
-semaphore-ui templates --project configuration_management
+semaphore-ui project list
+semaphore-ui project show --project configuration_management
+```
+
+List templates in a project and inspect one template:
+
+```bash
+semaphore-ui template list --project configuration_management
+semaphore-ui template show --project configuration_management --template hello_world
 ```
 
 Discover historical tasks:
 
 ```bash
-semaphore-ui tasks --project configuration_management --limit 20
-semaphore-ui tasks --project configuration_management \
+semaphore-ui task list --project configuration_management --limit 20
+semaphore-ui task list --project configuration_management \
   --var target=hermes-001.iot.home \
   --var fact=firewall_interface \
   --json
@@ -66,7 +73,7 @@ semaphore-ui tasks --project configuration_management \
 Filter by status, template, or creation time:
 
 ```bash
-semaphore-ui tasks --project configuration_management \
+semaphore-ui task list --project configuration_management \
   --status success \
   --template hello_world \
   --since 2026-08-29T00:00:00Z \
@@ -76,12 +83,17 @@ semaphore-ui tasks --project configuration_management \
 Trigger a task by name:
 
 ```bash
-semaphore-ui run \
+semaphore-ui task run \
   --project configuration_management \
   --template hello_world \
   --var target=hermes-001.iot.home \
   --var fact=firewall_interface
 ```
+
+The singular resource commands are the supported interface. The former
+top-level forms `projects`, `templates`, `tasks`, `run`, `status`, `wait`, and
+`output` were removed in the `1.0.0` breaking release; migrate those commands
+to the resource forms above.
 
 Create a task template without running it. The project, repository, inventory,
 and optional environment/view are resolved by exact name before the one
@@ -186,22 +198,23 @@ effective configuration.
 Wait for completion and retrieve output:
 
 ```bash
-semaphore-ui wait --project configuration_management --task 4
-semaphore-ui output --project configuration_management --task 4 --plain
+semaphore-ui task wait --project configuration_management --task 4
+semaphore-ui task output --project configuration_management --task 4 --plain
 ```
 
 Check a task:
 
 ```bash
-semaphore-ui status --project NAME --task ID
+semaphore-ui task status --project NAME --task ID
 ```
 
-Use `--json` on commands that return structured data for CI and agent integrations. `projects` and `templates` return API resource arrays. `run`, `status`, and `wait` return an envelope with `project`, `template` (for `run`), `task`, and `variables` (for `run`); `template create --json` returns `project`, `template`, and safe `configuration`; `task` contains the Semaphore task ID, status, timestamps, and environment. `output --json` returns output entries with `time`, `task_id`, and `output`. Successful commands exit `0`; task failures exit `1`; configuration, validation, lookup, network, authorization, malformed-response, and other API errors exit `2`.
+Use `--json` on commands that return structured data for CI and agent integrations. Canonical resource commands are `project`, `template`, and `task`; the former top-level commands were removed in `1.0.0`. `project list` and `template list` return API resource arrays. `project show` and `template show` return one resource. `task run`, `task status`, and `task wait` return an envelope with `project`, `template` (for `run`), `task`, and `variables` (for `run`); `template create --json` returns `project`, `template`, and safe `configuration`; `task` contains the Semaphore task ID, status, timestamps, and environment. `task output --json` returns output entries with `time`, `task_id`, and `output`. Successful commands exit `0`; task failures exit `1`; configuration, validation, lookup, network, authorization, malformed-response, and other API errors exit `2`.
 
 ## Recent Features
 
 | Date | Purpose | Spec | Author |
 | --- | --- | --- | --- |
+| 2026-09-05-20-55 | Normalize semaphore-ui CLI command conventions | [Specification](docs/features/2026-09-05-20-55-cli-command-conventions.md) | whose-footprints-are-these |
 | 2026-09-04-23-00 | Add safe Semaphore template copy command | [Specification](docs/features/2026-09-04-23-00-template-copy.md) | whose-footprints-are-these |
 | 2026-08-31-21-20 | Support survey defaults and vaults in template creation | [Specification](docs/features/2026-08-31-21-20-template-survey-defaults-and-vaults.md) | Jibba Jabber |
 | 2026-08-31-14-28 | Document v0.2.0 release candidate CLI usage | [Specification](docs/features/2026-08-31-14-28-document-release-candidate-usage.md) | jibbajabber |
