@@ -251,3 +251,14 @@ behavior with explicit `204 No Content` handling and read-back verification.
 list/show remain included because repository creation accepts exact access-key
 names. Inventory content is excluded from output; only identity and safe
 metadata are exposed.
+
+2026-09-06: End-to-end validation used the unreleased CLI candidate from
+commit `c3fc62c895dc9d8608eeb7ce7d472d3e6943900c`. Through the CLI only, the
+test created repository `fb_configuration_management` (ID `4`), created
+template `fb_hello_world` (ID `11`), verified inventory/access-key discovery,
+updated the template branch to `master` and read it back, then ran exactly one
+task (ID `27`). The task completed successfully with the expected hello-world
+output and `ok=3`, `changed=0`, `unreachable=0`, `failed=0`. The live update
+first revealed that Semaphore omits default-empty template `type` on read-back;
+the CLI was corrected to tolerate that omission while retaining strict checks
+for configured values, then retested successfully.
