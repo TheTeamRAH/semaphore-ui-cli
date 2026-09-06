@@ -1048,7 +1048,10 @@ def _handle_template_update(args: argparse.Namespace, client: SemaphoreClient) -
         raise ValueError("updated template identity did not match the request")
     expected = _safe_template_copy_configuration(payload)
     actual = _safe_template_copy_configuration(updated)
-    if actual != expected:
+    # Semaphore omits default-valued fields such as an empty template type
+    # from some read-back responses. Treat those omissions as equivalent while
+    # still requiring every explicitly configured non-default value to match.
+    if any(actual.get(key, "") != value for key, value in expected.items()):
         raise ValueError("updated template did not match the requested configuration")
     result = {
         "project": project,
