@@ -94,3 +94,39 @@ def test_lists_project_inventories_and_access_keys():
 
     assert client.list_inventories(1)[0]["name"] == "production"
     assert client.list_access_keys(1)[0]["name"] == "deploy key"
+
+
+def test_creates_inventory_and_validates_identity():
+    responses = {
+        ("POST", "/api/project/1/inventory"): {
+            "id": 4, "project_id": 1, "name": "production", "inventory": "inventories/production",
+            "type": "file", "ssh_key_id": 3, "become_key_id": 5, "repository_id": 2,
+        },
+    }
+    client = SemaphoreClient("https://semaphore.example", "secret", responses=responses)
+
+    inventory = client.create_inventory(1, {
+        "name": "production", "inventory": "inventories/production", "type": "file",
+        "ssh_key_id": 3, "become_key_id": 5, "repository_id": 2,
+    })
+
+    assert inventory["id"] == 4
+    assert inventory["project_id"] == 1
+
+
+def test_updates_inventory_with_full_payload_and_reads_back():
+    responses = {
+        ("PUT", "/api/project/1/inventory/4"): None,
+        ("GET", "/api/project/1/inventory"): [{
+            "id": 4, "project_id": 1, "name": "production", "inventory": "inventories/new",
+            "type": "file", "ssh_key_id": 3, "become_key_id": 5, "repository_id": 2,
+        }],
+    }
+    client = SemaphoreClient("https://semaphore.example", "secret", responses=responses)
+
+    inventory = client.update_inventory(1, 4, {
+        "id": 4, "project_id": 1, "name": "production", "inventory": "inventories/new",
+        "type": "file", "ssh_key_id": 3, "become_key_id": 5, "repository_id": 2,
+    })
+
+    assert inventory["inventory"] == "inventories/new"

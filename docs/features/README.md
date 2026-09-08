@@ -12,6 +12,7 @@ sources: []
 
 | Date | Purpose | Spec | Author |
 | --- | --- | --- | --- |
+| 2026-09-08-20-18 | Add inventory create, copy, and update commands | [Specification](2026-09-08-20-18-inventory-resource-commands.md) | whose-footprints-are-these |
 | 2026-09-06-18-47 | Add template update and project resource discovery commands | [Specification](2026-09-06-18-47-template-inventory-access-key-resources.md) | whose-footprints-are-these |
 | 2026-09-06-17-32 | Add Semaphore repository resource commands | [Specification](2026-09-06-17-32-repository-resource-commands.md) | whose-footprints-are-these |
 | 2026-09-05-20-55 | Normalize semaphore-ui CLI command conventions | [Specification](2026-09-05-20-55-cli-command-conventions.md) | whose-footprints-are-these |

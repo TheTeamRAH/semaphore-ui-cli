@@ -310,6 +310,138 @@ def _handle_inventory_show(args: argparse.Namespace, client: SemaphoreClient) ->
     return 0
 
 
+_INVENTORY_TYPES = ("static", "static-yaml", "file", "terraform-workspace")
+_INVENTORY_FIELDS = ("inventory", "type", "ssh_key_id", "become_key_id", "repository_id")
+
+
+def _inventory_reference_id(
+    client: SemaphoreClient, project_id: int, name: str | None, resource: str
+) -> int | None:
+    """Resolve an optional project resource name to a positive ID."""
+    if name is None:
+        return None
+    if resource == "access key":
+        item = client.find_access_key(project_id, name)
+    else:
+        item = client.find_repository(project_id, name)
+    return require_positive_int(item.get("id"), ValueError, f"resolved {resource} id must be positive")
+
+
+def _inventory_payload(
+    client: SemaphoreClient,
+    project_id: int,
+    *,
+    name: str,
+    inventory_path: str | None,
+    inventory_type: str | None,
+    ssh_key: str | None,
+    become_key: str | None,
+    repository: str | None,
+) -> dict[str, Any]:
+    """Build an inventory mutation payload from explicit CLI options."""
+    payload: dict[str, Any] = {"name": require_nonempty_string(name, ValueError, "inventory name must be a non-empty string")}
+    if inventory_path is not None:
+        payload["inventory"] = require_nonempty_string(
+            inventory_path, ValueError, "inventory path must be a non-empty string"
+        )
+    if inventory_type is not None:
+        payload["type"] = inventory_type
+    access_key_id = _inventory_reference_id(client, project_id, ssh_key, "access key")
+    if access_key_id is not None:
+        payload["ssh_key_id"] = access_key_id
+    become_key_id = _inventory_reference_id(client, project_id, become_key, "access key")
+    if become_key_id is not None:
+        payload["become_key_id"] = become_key_id
+    repository_id = _inventory_reference_id(client, project_id, repository, "repository")
+    if repository_id is not None:
+        payload["repository_id"] = repository_id
+    return payload
+
+
+def _safe_inventory_mutation_result(
+    project: dict[str, Any], inventory: dict[str, Any]
+) -> dict[str, Any]:
+    """Return a safe envelope for an inventory mutation."""
+    return {
+        "project": project,
+        "inventory": {key: inventory[key] for key in ("id", "project_id", "name") if key in inventory},
+        "configuration": _safe_inventory_configuration(inventory),
+    }
+
+
+def _handle_inventory_create(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Create an inventory resource from explicit CLI options."""
+    project = client.find_project(args.project)
+    inventories = client.list_inventories(project["id"])
+    if any(item.get("name") == args.name for item in inventories):
+        raise ValueError(f"inventory already exists: {args.name}")
+    payload = _inventory_payload(
+        client,
+        project["id"],
+        name=args.name,
+        inventory_path=args.inventory_path,
+        inventory_type=args.type,
+        ssh_key=args.ssh_key,
+        become_key=args.become_key,
+        repository=args.repository,
+    )
+    created = client.create_inventory(project["id"], payload)
+    _print(_safe_inventory_mutation_result(project, created), args.as_json)
+    return 0
+
+
+def _inventory_copy_payload(source: dict[str, Any], destination: str) -> dict[str, Any]:
+    """Build a safe inventory-create payload from a source resource."""
+    payload = {key: source[key] for key in _INVENTORY_FIELDS if key in source}
+    payload["name"] = require_nonempty_string(
+        destination, ValueError, "inventory name must be a non-empty string"
+    )
+    return payload
+
+
+def _handle_inventory_copy(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Copy an inventory resource without exposing its content."""
+    if args.inventory == args.name:
+        raise ValueError("inventory copy source and destination names must differ")
+    project = client.find_project(args.project)
+    inventories = client.list_inventories(project["id"])
+    if any(item.get("name") == args.name for item in inventories):
+        raise ValueError(f"inventory already exists: {args.name}")
+    source = client.find_inventory(project["id"], args.inventory)
+    created = client.create_inventory(
+        project["id"], _inventory_copy_payload(source, args.name)
+    )
+    _print(_safe_inventory_mutation_result(project, created), args.as_json)
+    return 0
+
+
+def _handle_inventory_update(args: argparse.Namespace, client: SemaphoreClient) -> int:
+    """Update explicit inventory options and verify persisted state."""
+    if all(value is None for value in (args.path, args.type, args.ssh_key, args.become_key, args.repository)):
+        raise ValueError("inventory update requires at least one update option")
+    project = client.find_project(args.project)
+    source = client.find_inventory(project["id"], args.inventory)
+    payload = {"id": source["id"], "project_id": project["id"], "name": source["name"]}
+    payload.update({key: source[key] for key in _INVENTORY_FIELDS if key in source})
+    payload.update(_inventory_payload(
+        client,
+        project["id"],
+        name=source["name"],
+        inventory_path=args.path,
+        inventory_type=args.type,
+        ssh_key=args.ssh_key,
+        become_key=args.become_key,
+        repository=args.repository,
+    ))
+    updated = client.update_inventory(project["id"], source["id"], payload)
+    persisted = client.find_inventory(project["id"], source["name"])
+    for field in ("name", "inventory", "type", "ssh_key_id", "become_key_id", "repository_id"):
+        if field in payload and persisted.get(field) != payload[field]:
+            raise ValueError(f"updated inventory did not match requested {field}")
+    _print(_safe_inventory_mutation_result(project, persisted), args.as_json)
+    return 0
+
+
 def _handle_access_key_list(args: argparse.Namespace, client: SemaphoreClient) -> int:
     """List access-key identities in a project."""
     project = client.find_project(args.project)
@@ -1377,7 +1509,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_json_argument(repository_update)
     repository_update.set_defaults(handler=_handle_repository_update)
 
-    inventory = sub.add_parser("inventory", help="inspect project inventories")
+    inventory = sub.add_parser("inventory", help="manage project inventories")
     inventory_sub = inventory.add_subparsers(dest="inventory_command", required=True)
     inventory_list = inventory_sub.add_parser("list", help="list inventories in a project")
     inventory_list.add_argument("--project", required=True, help="exact project name")
@@ -1388,6 +1520,32 @@ def build_parser() -> argparse.ArgumentParser:
     inventory_show.add_argument("--inventory", required=True, help="exact inventory name")
     _add_json_argument(inventory_show)
     inventory_show.set_defaults(handler=_handle_inventory_show)
+    inventory_create = inventory_sub.add_parser("create", help="create an inventory resource")
+    inventory_create.add_argument("--project", required=True, help="exact project name")
+    inventory_create.add_argument("--name", required=True, help="new inventory name")
+    inventory_create.add_argument("--type", required=True, choices=_INVENTORY_TYPES)
+    inventory_create.add_argument("--path", required=True, dest="inventory_path", help="inventory path or content")
+    inventory_create.add_argument("--ssh-key", help="exact project access-key name")
+    inventory_create.add_argument("--become-key", help="exact project access-key name")
+    inventory_create.add_argument("--repository", help="exact repository name in the project")
+    _add_json_argument(inventory_create)
+    inventory_create.set_defaults(handler=_handle_inventory_create)
+    inventory_copy = inventory_sub.add_parser("copy", help="copy an inventory resource")
+    inventory_copy.add_argument("--project", required=True, help="exact project name")
+    inventory_copy.add_argument("--inventory", required=True, help="exact source inventory name")
+    inventory_copy.add_argument("--name", required=True, help="new inventory name")
+    _add_json_argument(inventory_copy)
+    inventory_copy.set_defaults(handler=_handle_inventory_copy)
+    inventory_update = inventory_sub.add_parser("update", help="update an inventory resource")
+    inventory_update.add_argument("--project", required=True, help="exact project name")
+    inventory_update.add_argument("--inventory", required=True, help="exact inventory name")
+    inventory_update.add_argument("--type", choices=_INVENTORY_TYPES)
+    inventory_update.add_argument("--path", dest="path", help="new inventory path or content")
+    inventory_update.add_argument("--ssh-key", help="exact project access-key name")
+    inventory_update.add_argument("--become-key", help="exact project access-key name")
+    inventory_update.add_argument("--repository", help="exact repository name in the project")
+    _add_json_argument(inventory_update)
+    inventory_update.set_defaults(handler=_handle_inventory_update)
 
     access_key = sub.add_parser("access-key", help="inspect project access-key identities")
     access_key_sub = access_key.add_subparsers(dest="access_key_command", required=True)

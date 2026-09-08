@@ -20,6 +20,8 @@ class ResourceClient:
             "id": 3, "project_id": 1, "name": "deploy key", "type": "ssh",
             "login": "git", "private_key": "secret",
         }]
+        self.created_inventories = []
+        self.updated_inventories = []
 
     def find_project(self, name):
         assert name == "configuration_management"
@@ -50,6 +52,24 @@ class ResourceClient:
 
     def find_access_key(self, project_id, name):
         return next(item for item in self.list_access_keys(project_id) if item["name"] == name)
+
+    def find_repository(self, project_id, name):
+        assert (project_id, name) == (1, "configuration_management")
+        return {"id": 2, "project_id": 1, "name": name}
+
+    def create_inventory(self, project_id, payload):
+        self.created_inventories.append((project_id, payload))
+        created = {"id": 8, "project_id": project_id, **payload}
+        self.inventories.append(created)
+        return created
+
+    def update_inventory(self, project_id, inventory_id, payload):
+        self.updated_inventories.append((project_id, inventory_id, payload))
+        self.inventories = [
+            {**item, **payload} if item["id"] == inventory_id else item
+            for item in self.inventories
+        ]
+        return next(item for item in self.inventories if item["id"] == inventory_id)
 
 
 def test_template_update_changes_only_branch_and_reads_back(monkeypatch, capsys):
