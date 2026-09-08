@@ -67,6 +67,7 @@ def test_inventory_create_uses_explicit_options(monkeypatch, capsys):
     ]) == 0
 
     assert client.created == [(1, {
+        "project_id": 1,
         "name": "production", "type": "file", "inventory": "inventories/production",
         "ssh_key_id": 3, "become_key_id": 3, "repository_id": 2,
     })]
@@ -85,6 +86,7 @@ def test_inventory_copy_preserves_configuration_without_secret_output(monkeypatc
     ]) == 0
 
     assert client.created == [(1, {
+        "project_id": 1,
         "name": "production", "inventory": "inventory", "ssh_key_id": 2,
         "type": "static",
     })]

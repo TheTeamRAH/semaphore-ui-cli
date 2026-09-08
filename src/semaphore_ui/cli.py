@@ -375,7 +375,7 @@ def _handle_inventory_create(args: argparse.Namespace, client: SemaphoreClient) 
     inventories = client.list_inventories(project["id"])
     if any(item.get("name") == args.name for item in inventories):
         raise ValueError(f"inventory already exists: {args.name}")
-    payload = _inventory_payload(
+    payload = {"project_id": project["id"], **_inventory_payload(
         client,
         project["id"],
         name=args.name,
@@ -384,7 +384,7 @@ def _handle_inventory_create(args: argparse.Namespace, client: SemaphoreClient) 
         ssh_key=args.ssh_key,
         become_key=args.become_key,
         repository=args.repository,
-    )
+    )}
     created = client.create_inventory(project["id"], payload)
     _print(_safe_inventory_mutation_result(project, created), args.as_json)
     return 0
@@ -409,7 +409,7 @@ def _handle_inventory_copy(args: argparse.Namespace, client: SemaphoreClient) ->
         raise ValueError(f"inventory already exists: {args.name}")
     source = client.find_inventory(project["id"], args.inventory)
     created = client.create_inventory(
-        project["id"], _inventory_copy_payload(source, args.name)
+        project["id"], {"project_id": project["id"], **_inventory_copy_payload(source, args.name)}
     )
     _print(_safe_inventory_mutation_result(project, created), args.as_json)
     return 0
