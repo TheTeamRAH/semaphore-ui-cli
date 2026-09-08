@@ -100,9 +100,10 @@ Semaphore skill accurate after live validation.
 - Secret-safe, whitelist-based human-readable and JSON output for all inventory
   commands. Mutation results must report safe identity/configuration only, not
   inventory content or credential material.
-- A secret-free JSON request-file interface for create and update payloads. The
-  file may contain only the documented inventory request fields; it must not be
-  printed, copied into output, or included in errors.
+- Explicit CLI options for every supported create and update attribute. Inventory
+  attributes must not require a request file; users must be able to provide the
+  inventory name, path/content, type, access-key references, and repository
+  reference as command options.
 - Copy transformation that preserves supported source configuration while
   replacing the destination name, without exposing the source content.
 - Unit and CLI tests covering parser/help, payload validation, exact lookup,
@@ -139,33 +140,53 @@ semaphore-ui inventory list \
 semaphore-ui inventory show \
   --project PROJECT --inventory NAME --json
 semaphore-ui inventory create \
-  --project PROJECT --file inventory.json --json
+  --project PROJECT \
+  --name NAME \
+  --type TYPE \
+  --path INVENTORY_PATH \
+  [--ssh-key ACCESS_KEY] \
+  [--become-key ACCESS_KEY] \
+  [--repository REPOSITORY] \
+  --json
 semaphore-ui inventory copy \
   --project PROJECT --inventory SOURCE --name DESTINATION --json
 semaphore-ui inventory update \
-  --project PROJECT --inventory NAME --file inventory-update.json --json
+  --project PROJECT --inventory NAME \
+  [--type TYPE] \
+  [--path INVENTORY_PATH] \
+  [--ssh-key ACCESS_KEY] \
+  [--become-key ACCESS_KEY] \
+  [--repository REPOSITORY] \
+  --json
 ```
 
-`create` and `update` use a JSON request file so inventory content is not
-placed in shell history or command-line arguments. The accepted top-level
-fields are the Semaphore `InventoryRequest` fields: `name`, `inventory`,
-`ssh_key_id`, `become_key_id`, `repository_id`, and `type`; `project_id` and
-`id` are controlled by the CLI and are not accepted from the file. The CLI
-must validate non-empty names/content where applicable, positive numeric IDs,
-and the API-supported type values (`static`, `static-yaml`, `file`, and
-`terraform-workspace`) before making a mutation. The exact required fields for
-each type must follow the deployed API behavior discovered during
-implementation; any type-specific requirement not confirmed by the instance
-must fail clearly rather than be guessed.
+`create` and `update` use explicit CLI options rather than requiring a request
+file. `create` requires `--name`, `--type`, and `--path`; the optional access-key
+and repository options resolve exact project-scoped resource names to IDs.
+`--path` maps to Semaphore's `inventory` request field, whose meaning follows
+the selected inventory type (for example, a repository-relative inventory path
+for a file inventory or the supported static inventory value). The CLI must
+preserve the supplied value literally and must document the deployed behavior.
+`update` requires at least one update option and does not permit a name change.
 
-For `update`, the file contains the fields to change and must not permit a
-name change. The implementation reads the existing inventory, merges the
-explicitly requested supported fields with the required preserved fields, and
-sends the documented full update payload. For `copy`, the implementation reads
-the source, rejects a same-name or already-existing destination, changes only
-`name`, and creates the destination with the source's supported configuration.
-The destination name must be supplied separately and must not be taken from
-untrusted source content.
+The supported option set maps to the Semaphore `InventoryRequest` fields as
+follows: `--name` to `name`, `--path` to `inventory`, `--type` to `type`,
+`--ssh-key` to `ssh_key_id`, `--become-key` to `become_key_id`, and
+`--repository` to `repository_id`. IDs are resolved from exact names by the
+CLI; callers do not provide raw project or resource IDs for these references.
+The CLI must validate non-empty names/paths where applicable, positive resolved
+IDs, and the API-supported type values (`static`, `static-yaml`, `file`, and
+`terraform-workspace`) before making a mutation. The exact type-specific
+requirements must follow the deployed API behavior discovered during
+implementation; any requirement not confirmed by the instance must fail
+clearly rather than be guessed.
+
+For `update`, the CLI merges the explicitly supplied options with the required
+preserved fields from the existing inventory, and must not permit a name change.
+For `copy`, the implementation reads the source, rejects a same-name or
+already-existing destination, changes only `name`, and creates the destination
+with the source's supported configuration. The destination name must be
+supplied separately and must not be taken from untrusted source content.
 
 Mutation results use the existing safe inventory projection. At minimum this
 projection may include `id`, `project_id`, `name`, `type`, and safe resource
@@ -316,6 +337,10 @@ recorded before finalizing the payload, not guessed from the command names.
 
 ## Amendments
 
-None.
+2026-09-08: The create and update interfaces were amended after review:
+request files are removed from scope. Supported inventory attributes must be
+available as explicit CLI options, including name, path/content, type,
+access-key references, and repository reference. The specification now uses
+`--name`, `--path`, `--type`, `--ssh-key`, `--become-key`, and `--repository`.
 
 [^api]: [Semaphore API inventory definition and project inventory endpoints](https://raw.githubusercontent.com/semaphoreui/semaphore/develop/api-docs.yml)
