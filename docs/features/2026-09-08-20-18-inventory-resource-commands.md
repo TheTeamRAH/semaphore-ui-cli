@@ -204,7 +204,7 @@ by tests and the API response shape.
 2. Project and inventory names are required non-empty strings and resolve by
    exact match. Missing or ambiguous source resources fail before mutation.
 3. Create rejects an existing destination name before POST and validates the
-   request-file object and supported fields before POST.
+   supplied CLI options and supported fields before POST.
 4. Copy reads one exact source, rejects same-name and existing destinations,
    submits a create payload with the destination name, and does not mutate the
    source.
@@ -268,7 +268,7 @@ by tests and the API response shape.
 - Inspect the deployed instance's API/schema before finalizing validation and
   payload details. The upstream API document is a source for the endpoint and
   model, not proof that every deployed instance has identical behavior.
-- Keep request-file parsing and create/copy/update transformations in pure
+- Keep CLI option parsing and create/copy/update transformations in pure
   helpers so field whitelisting, name rules, and preservation behavior are
   directly testable.
 - Keep safe inventory projection separate from mutation payload construction;
