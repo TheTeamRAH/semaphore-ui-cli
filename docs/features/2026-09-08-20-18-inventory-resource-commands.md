@@ -34,7 +34,7 @@ sources:
   - id: ai-toolkit-skill
     resource: ../../../ai-toolkit/skills/semaphore-ui/SKILL.md
     title: Downstream Semaphore skill contract
-status: proposed
+status: completed
 author: whose-footprints-are-these
 ---
 
@@ -334,6 +334,22 @@ None are blocking at specification review. Type-specific required fields and
 whether the deployed API accepts collection query parameters are implementation
 validation items: they must be discovered from the deployed instance and
 recorded before finalizing the payload, not guessed from the command names.
+
+## Release Closeout
+
+- **Decision:** `updated`; the inventory command feature changes the supported
+  public CLI interface and warrants a backward-compatible minor release.
+- **Classification:** minor.
+- **Previous version:** `1.2.0`.
+- **Resulting version:** `1.3.0`.
+- **Authoritative source:** `[project].version` in `pyproject.toml`.
+- **Derived artifact:** `uv.lock` was regenerated so its editable package record
+  matches `1.3.0`.
+- **Release metadata:** tag `v1.3.0` points to the merged feature commit and
+  release commit `b500ac2cef902246471bb3176a3fced398797211`.
+- **Validation:** `uv lock --check`, `uv run pytest`, `uv build`,
+  `semaphore-ui --version`, and `git diff --check` are required after this
+  closeout mutation; results will be recorded before delivery.
 
 ## Amendments
 
