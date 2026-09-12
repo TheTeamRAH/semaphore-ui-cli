@@ -247,8 +247,27 @@ semaphore-ui access-key show --project configuration_management \
   --access-key "deploy key" --json
 ```
 
-Inventory commands return identity and safe metadata only; access-key commands
-never return private keys, passwords, tokens, or equivalent secret material.
+Create, copy, and update inventories using explicit CLI options. `--path` maps
+to Semaphore's inventory path/content field, while access-key and repository
+options resolve exact project-scoped names:
+
+```bash
+semaphore-ui inventory create \
+  --project configuration_management \
+  --name homelab --type file --path inventories/homelab \
+  --ssh-key "deploy key" --repository configuration_management
+semaphore-ui inventory copy \
+  --project configuration_management \
+  --inventory configuration_management --name homelab-copy
+semaphore-ui inventory update \
+  --project configuration_management \
+  --inventory homelab --path inventories/homelab-new
+```
+
+Inventory mutations verify the persisted resource after the request and return
+identity and safe metadata only. Inventory content and credential material are
+never displayed. Access-key commands never return private keys, passwords,
+tokens, or equivalent secret material.
 
 Wait for completion and retrieve output:
 
@@ -269,6 +288,7 @@ Use `--json` on commands that return structured data for CI and agent integratio
 
 | Date | Purpose | Spec | Author |
 | --- | --- | --- | --- |
+| 2026-09-08-20-18 | Add inventory create, copy, and update commands | [Specification](docs/features/2026-09-08-20-18-inventory-resource-commands.md) | whose-footprints-are-these |
 | 2026-09-06-18-47 | Add template update and project resource discovery commands | [Specification](docs/features/2026-09-06-18-47-template-inventory-access-key-resources.md) | whose-footprints-are-these |
 | 2026-09-06-17-32 | Add Semaphore repository resource commands | [Specification](docs/features/2026-09-06-17-32-repository-resource-commands.md) | whose-footprints-are-these |
 | 2026-09-05-20-55 | Normalize semaphore-ui CLI command conventions | [Specification](docs/features/2026-09-05-20-55-cli-command-conventions.md) | whose-footprints-are-these |

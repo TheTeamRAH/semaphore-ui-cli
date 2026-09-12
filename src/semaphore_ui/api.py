@@ -196,6 +196,31 @@ def _require_repository(repository: Any, project_id: int) -> dict[str, Any]:
     return repository
 
 
+def _require_inventory(inventory: Any, project_id: int) -> dict[str, Any]:
+    """Validate an inventory response and return it unchanged.
+
+    Args:
+        inventory: Decoded Semaphore inventory response.
+        project_id: Positive ID of the requested project.
+
+    Returns:
+        The validated inventory dictionary.
+
+    Raises:
+        APIError: If the response is malformed or belongs to another project.
+    """
+    if not isinstance(inventory, dict):
+        raise APIError("Semaphore inventory response was not an object")
+    _require_positive_id(inventory.get("id"), "id", "inventory")
+    response_project_id = _require_positive_id(inventory.get("project_id"), "project_id", "inventory")
+    if response_project_id != project_id:
+        raise APIError("Semaphore inventory response project_id did not match the requested project")
+    require_nonempty_string(
+        inventory.get("name"), APIError, "Semaphore inventory response did not contain a non-empty name"
+    )
+    return inventory
+
+
 def _schema_properties(document: dict[str, Any], schema: Any) -> dict[str, Any]:
     """Return the merged properties declared by a Swagger schema fragment.
 
@@ -532,6 +557,26 @@ class SemaphoreClient:
     def find_inventory(self, project_id: int, name: str) -> dict[str, Any]:
         """Resolve an inventory by exact project-scoped name."""
         return self._filter_exact(self.list_inventories(project_id), name, "inventory")
+
+    def create_inventory(self, project_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        """Create an inventory and validate its identity and requested fields."""
+        inventory = _require_inventory(
+            self._request("POST", f"/api/project/{project_id}/inventory", payload), project_id
+        )
+        for field in ("name", "type", "inventory", "ssh_key_id", "become_key_id", "repository_id"):
+            if field in payload and inventory.get(field) != payload[field]:
+                raise APIError(f"Semaphore inventory response {field} did not match the request")
+        return inventory
+
+    def update_inventory(
+        self, project_id: int, inventory_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Update an inventory and read back its persisted configuration."""
+        project_id = _require_positive_id(project_id, "project_id", "inventory")
+        inventory_id = _require_positive_id(inventory_id, "id", "inventory")
+        self._request("PUT", f"/api/project/{project_id}/inventory/{inventory_id}", payload)
+        inventory = self.find_inventory(project_id, payload["name"])
+        return _require_inventory(inventory, project_id)
 
     def list_environments(self, project_id: int) -> list[dict[str, Any]]:
         """Return environment variable groups available within a project."""
