@@ -89,6 +89,75 @@ def test_template_update_changes_only_branch_and_reads_back(monkeypatch, capsys)
     assert json.loads(capsys.readouterr().out)["configuration"]["git_branch"] == "feature_branch_cm"
 
 
+def test_template_update_merges_direct_survey_options(monkeypatch):
+    client = ResourceClient()
+    client.templates[0]["survey_vars"] = [
+        {
+            "name": "target",
+            "title": "Target",
+            "description": "Target host",
+            "type": "",
+            "required": True,
+        }
+    ]
+    monkeypatch.setattr(cli, "_client", lambda insecure=False: client)
+
+    assert cli.main([
+        "template", "update", "--project", "configuration_management",
+        "--template", "hello_world",
+        "--survey-var", "inbox_repo_version=main",
+        "--survey-title", "inbox_repo_version=Inbox repository version",
+        "--survey-description", "inbox_repo_version=Git branch, tag, or commit",
+        "--json",
+    ]) == 0
+
+    survey_vars = client.updated_templates[0][2]["survey_vars"]
+    assert survey_vars == [
+        {
+            "name": "target",
+            "title": "Target",
+            "description": "Target host",
+            "type": "",
+            "required": True,
+        },
+        {
+            "name": "inbox_repo_version",
+            "title": "Inbox repository version",
+            "description": "Git branch, tag, or commit",
+            "default_value": "main",
+        },
+    ]
+
+
+def test_template_update_preserves_existing_survey_metadata(monkeypatch):
+    client = ResourceClient()
+    client.templates[0]["survey_vars"] = [{
+        "name": "inbox_repo_version",
+        "title": "Inbox repository version",
+        "description": "Git branch, tag, or commit",
+        "type": "",
+        "target": "env",
+        "required": True,
+        "default_value": "main",
+    }]
+    monkeypatch.setattr(cli, "_client", lambda insecure=False: client)
+
+    assert cli.main([
+        "template", "update", "--project", "configuration_management",
+        "--template", "hello_world", "--survey-var", "inbox_repo_version=feature/test",
+    ]) == 0
+
+    assert client.updated_templates[0][2]["survey_vars"] == [{
+        "name": "inbox_repo_version",
+        "title": "Inbox repository version",
+        "description": "Git branch, tag, or commit",
+        "type": "",
+        "target": "env",
+        "required": True,
+        "default_value": "feature/test",
+    }]
+
+
 def test_inventory_list_and_show_are_safe(monkeypatch, capsys):
     client = ResourceClient()
     monkeypatch.setattr(cli, "_client", lambda insecure=False: client)

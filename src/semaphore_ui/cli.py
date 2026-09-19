@@ -812,6 +812,138 @@ def _inline_json_objects(values: list[str], option: str) -> list[dict[str, Any]]
     return result
 
 
+def _parse_assignment(value: str, option: str, *, allow_empty: bool = False) -> tuple[str, str]:
+    """Split a named CLI assignment at its first equals sign.
+
+    Args:
+        value: User-provided ``NAME=VALUE`` string.
+        option: CLI option name used in validation errors.
+        allow_empty: Whether an empty value is accepted.
+
+    Returns:
+        The name and literal value.
+
+    Raises:
+        ValueError: If the assignment is malformed or empty values are disallowed.
+
+    Examples:
+        ``_parse_assignment("branch=feature/test", "--survey-var")`` returns
+        ``("branch", "feature/test")``.
+    """
+    name, separator, assigned = value.partition("=")
+    if not separator or not name or (not allow_empty and not assigned):
+        suffix = "=VALUE" if not allow_empty else ""
+        raise ValueError(f"{option} must use NAME=VALUE{suffix}")
+    return name, assigned
+
+
+def _survey_updates_from_args(args: argparse.Namespace) -> dict[str, dict[str, Any]]:
+    """Build validated survey-variable updates from direct CLI arguments.
+
+    Args:
+        args: Parsed template command arguments.
+
+    Returns:
+        Survey definitions keyed by exact variable name.
+
+    Raises:
+        ValueError: If assignments conflict or use unsupported combinations.
+
+    Examples:
+        ``--survey-var inbox_repo_version=main`` produces a definition with
+        ``name`` and ``default_value`` fields.
+    """
+    updates: dict[str, dict[str, Any]] = {}
+
+    def definition(name: str) -> dict[str, Any]:
+        if not name:
+            raise ValueError("survey variable name must not be empty")
+        return updates.setdefault(name, {"name": name})
+
+    for raw in getattr(args, "survey_vars", []) or []:
+        if raw.lstrip().startswith("{"):
+            for item in _inline_json_objects([raw], "--survey-var"):
+                name = item.get("name")
+                if not isinstance(name, str) or not name:
+                    raise ValueError("--survey-var JSON object requires a non-empty name")
+                current = definition(name)
+                if set(current) != {"name"} or set(item).intersection(current) - {"name"}:
+                    raise ValueError(f"duplicate survey definition: {name}")
+                current.update(item)
+            continue
+        name, _separator, default = raw.partition("=")
+        if not name:
+            raise ValueError("--survey-var must use NAME or NAME=DEFAULT")
+        current = definition(name)
+        if "default_value" in current:
+            raise ValueError(f"duplicate survey default: {name}")
+        if default or "=" in raw:
+            current["default_value"] = default
+
+    for option, attribute in (
+        ("survey_titles", "title"),
+        ("survey_descriptions", "description"),
+        ("survey_types", "type"),
+        ("survey_targets", "target"),
+    ):
+        for raw in getattr(args, option, []) or []:
+            name, value = _parse_assignment(raw, f"--survey-{attribute}")
+            current = definition(name)
+            if attribute in current and current[attribute] != value:
+                raise ValueError(f"conflicting survey {attribute}: {name}")
+            current[attribute] = value
+
+    for raw in getattr(args, "survey_required", []) or []:
+        current = definition(raw)
+        if current.get("required") is False:
+            raise ValueError(f"conflicting survey required state: {raw}")
+        current["required"] = True
+    for raw in getattr(args, "survey_optional", []) or []:
+        current = definition(raw)
+        if current.get("required") is True:
+            raise ValueError(f"conflicting survey required state: {raw}")
+        current["required"] = False
+
+    for raw in getattr(args, "survey_options", []) or []:
+        name, value = _parse_assignment(raw, "--survey-option")
+        current = definition(name)
+        if current.get("type") not in {None, "", "enum", "select"}:
+            raise ValueError(f"--survey-option requires enum or select survey type: {name}")
+        current.setdefault("type", "enum")
+        current.setdefault("values", []).append({"name": value, "value": value})
+
+    return updates
+
+
+def _merge_survey_vars(existing: Any, updates: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Merge direct survey updates into existing definitions by variable name.
+
+    Args:
+        existing: Existing survey-variable collection.
+        updates: Direct CLI definitions keyed by variable name.
+
+    Returns:
+        Validated survey definitions in existing order followed by new variables.
+
+    Raises:
+        ValueError: If existing definitions or merged updates are invalid.
+
+    Examples:
+        Updating ``default_value`` changes only that field and preserves the
+        existing title, description, type, target, required state, and options.
+    """
+    merged = [dict(item) for item in _validate_survey_vars(existing or [])]
+    positions = {item["name"]: index for index, item in enumerate(merged)}
+    for name, update in updates.items():
+        if name in positions:
+            merged[positions[name]].update(update)
+        else:
+            new_item = dict(update)
+            new_item.setdefault("title", name)
+            merged.append(new_item)
+    return _validate_survey_vars(merged)
+
+
 def _template_request_from_args(args: argparse.Namespace) -> dict[str, Any]:
     """Load one exclusive direct-option or JSON-file template request.
 
@@ -837,9 +969,16 @@ def _template_request_from_args(args: argparse.Namespace) -> dict[str, Any]:
         for field in _TEMPLATE_FIELDS
         if getattr(args, field, None) is not None
     }
-    for field, option in (("survey_vars", "--survey-var"), ("vaults", "--vault")):
-        if field in direct:
-            direct[field] = _inline_json_objects(direct[field], option)
+    if "vaults" in direct:
+        direct["vaults"] = _inline_json_objects(direct["vaults"], "--vault")
+    survey_updates = _survey_updates_from_args(args)
+    if survey_updates:
+        if args.file:
+            raise ValueError("template --file cannot be combined with direct template options")
+        direct["survey_vars"] = [
+            {**item, "title": item.get("title", item["name"])}
+            for item in survey_updates.values()
+        ]
     if direct.get("type") == "default":
         direct["type"] = ""
     if args.file:
@@ -1168,21 +1307,25 @@ def _handle_template_copy(args: argparse.Namespace, client: SemaphoreClient) -> 
 
 
 def _handle_template_update(args: argparse.Namespace, client: SemaphoreClient) -> int:
-    """Update a template's branch and verify its persisted configuration."""
+    """Update a template's branch or survey variables and verify persistence."""
     project = client.find_project(args.project)
     project_id = _resource_id(project, "project")
     source = client.find_template(project_id, args.template)
     template_id = _resource_id(source, "template")
+    survey_updates = _survey_updates_from_args(args)
+    if not args.git_branch and not survey_updates:
+        raise ValueError("template update requires --git-branch or survey options")
     payload = _template_copy_request(source, source["name"])
-    payload.update({"id": template_id, "project_id": project_id, "git_branch": args.git_branch})
+    payload.update({"id": template_id, "project_id": project_id})
+    if args.git_branch:
+        payload["git_branch"] = args.git_branch
+    if survey_updates:
+        payload["survey_vars"] = _merge_survey_vars(source.get("survey_vars", []), survey_updates)
     updated = client.update_template(project_id, template_id, payload)
     if updated.get("id") != template_id or updated.get("project_id") != project_id:
         raise ValueError("updated template identity did not match the request")
     expected = _safe_template_copy_configuration(payload)
     actual = _safe_template_copy_configuration(updated)
-    # Semaphore omits default-valued fields such as an empty template type
-    # from some read-back responses. Treat those omissions as equivalent while
-    # still requiring every explicitly configured non-default value to match.
     if any(actual.get(key, "") != value for key, value in expected.items()):
         raise ValueError("updated template did not match the requested configuration")
     result = {
@@ -1455,6 +1598,32 @@ def _add_wait_arguments(parser: argparse.ArgumentParser) -> None:
     _add_json_argument(parser)
 
 
+def _add_survey_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add direct survey-variable options shared by template commands.
+
+    Args:
+        parser: Template create or update parser receiving the options.
+
+    Examples:
+        The resulting parser accepts ``--survey-var name=default`` and related
+        metadata options without requiring a JSON request file.
+    """
+    parser.add_argument(
+        "--survey-var",
+        action="append",
+        dest="survey_vars",
+        metavar="NAME[=DEFAULT]",
+        help="survey variable name with optional string default; repeatable",
+    )
+    parser.add_argument("--survey-title", action="append", dest="survey_titles", metavar="NAME=TITLE")
+    parser.add_argument("--survey-description", action="append", dest="survey_descriptions", metavar="NAME=DESCRIPTION")
+    parser.add_argument("--survey-type", action="append", dest="survey_types", metavar="NAME=TYPE")
+    parser.add_argument("--survey-target", action="append", dest="survey_targets", metavar="NAME=TARGET")
+    parser.add_argument("--survey-required", action="append", dest="survey_required", metavar="NAME")
+    parser.add_argument("--survey-optional", action="append", dest="survey_optional", metavar="NAME")
+    parser.add_argument("--survey-option", action="append", dest="survey_options", metavar="NAME=VALUE")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser and dispatch table.
 
@@ -1573,11 +1742,11 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument(
         "--file",
         help=(
-            "JSON request file for nested survey_vars[].default_value, vaults, and task_params; "
-            "cannot be combined with template options"
+            "JSON request file for advanced template fields; "
+            "cannot be combined with direct template options"
         ),
     )
-    create.add_argument("--survey-var", action="append", dest="survey_vars", metavar="JSON", help="survey variable JSON object; repeatable")
+    _add_survey_arguments(create)
     create.add_argument("--vault", action="append", dest="vaults", metavar="JSON", help="vault JSON object; repeatable")
     create.add_argument("--name")
     create.add_argument("--repository", help="exact repository name in the project")
@@ -1601,7 +1770,8 @@ def build_parser() -> argparse.ArgumentParser:
     template_update = template_sub.add_parser("update", help="update a template resource")
     template_update.add_argument("--project", required=True, help="exact project name")
     template_update.add_argument("--template", required=True, help="exact template name")
-    template_update.add_argument("--git-branch", required=True, help="new Git branch or ref")
+    template_update.add_argument("--git-branch", help="new Git branch or ref")
+    _add_survey_arguments(template_update)
     _add_json_argument(template_update)
     template_update.set_defaults(handler=_handle_template_update)
 

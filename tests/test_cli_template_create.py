@@ -65,9 +65,9 @@ def test_template_create_help_identifies_nested_request_file_capabilities(capsys
         assert exc.code == 0
 
     help_text = capsys.readouterr().out
-    assert "survey_vars[].default_value" in help_text
-    assert "vaults" in help_text
-    assert "--survey-var JSON" in help_text
+    assert "--survey-var NAME[=DEFAULT]" in help_text
+    assert "--survey-title NAME=TITLE" in help_text
+    assert "--survey-option NAME=VALUE" in help_text
     assert "--vault JSON" in help_text
 
 
@@ -258,6 +258,49 @@ def test_template_create_accepts_direct_nested_options_without_environment(monke
     ) == 0
     assert "default_value" not in capsys.readouterr().out
 
+
+
+
+def test_template_create_accepts_direct_survey_options(monkeypatch):
+    class DirectSurveyClient(FakeClient):
+        def create_template(self, project_id, payload):
+            assert payload["survey_vars"] == [{
+                "name": "inbox_repo_version",
+                "title": "Inbox repository version",
+                "description": "Git branch, tag, or commit",
+                "default_value": "main",
+                "required": True,
+            }]
+            return {"id": 5, "project_id": project_id, "name": payload["name"]}
+
+    monkeypatch.setattr(cli, "_client", lambda insecure=False: DirectSurveyClient())
+    assert cli.main([
+        "template", "create", "--project", "configuration_management",
+        "--name", "show-firewall-interface", "--repository", "configuration-management",
+        "--inventory", "homelab", "--playbook", "site.yml",
+        "--survey-var", "inbox_repo_version=main",
+        "--survey-title", "inbox_repo_version=Inbox repository version",
+        "--survey-description", "inbox_repo_version=Git branch, tag, or commit",
+        "--survey-required", "inbox_repo_version",
+    ]) == 0
+
+def test_template_create_derives_title_for_minimal_survey_option(monkeypatch):
+    class MinimalSurveyClient(FakeClient):
+        def create_template(self, project_id, payload):
+            assert payload["survey_vars"] == [{
+                "name": "inbox_repo_version",
+                "title": "inbox_repo_version",
+                "default_value": "main",
+            }]
+            return {"id": 5, "project_id": project_id, "name": payload["name"]}
+
+    monkeypatch.setattr(cli, "_client", lambda insecure=False: MinimalSurveyClient())
+    assert cli.main([
+        "template", "create", "--project", "configuration_management",
+        "--name", "show-firewall-interface", "--repository", "configuration-management",
+        "--inventory", "homelab", "--playbook", "site.yml",
+        "--survey-var", "inbox_repo_version=main",
+    ]) == 0
 
 def test_template_create_rejects_secret_survey_default_before_api_lookup(monkeypatch, tmp_path):
     request_file = tmp_path / "template.json"
