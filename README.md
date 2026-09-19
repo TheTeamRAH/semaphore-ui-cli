@@ -288,6 +288,7 @@ Use `--json` on commands that return structured data for CI and agent integratio
 
 | Date | Purpose | Spec | Author |
 | --- | --- | --- | --- |
+| 2026-09-19-15-24 | Add direct CLI attribute options for Semaphore template surveys | [Specification](docs/features/2026-09-19-15-24-template-cli-attribute-options.md) | whose-footprints-are-these |
 | 2026-09-08-20-18 | Add inventory create, copy, and update commands | [Specification](docs/features/2026-09-08-20-18-inventory-resource-commands.md) | whose-footprints-are-these |
 | 2026-09-06-18-47 | Add template update and project resource discovery commands | [Specification](docs/features/2026-09-06-18-47-template-inventory-access-key-resources.md) | whose-footprints-are-these |
 | 2026-09-06-17-32 | Add Semaphore repository resource commands | [Specification](docs/features/2026-09-06-17-32-repository-resource-commands.md) | whose-footprints-are-these |
@@ -297,7 +298,6 @@ Use `--json` on commands that return structured data for CI and agent integratio
 | 2026-08-31-14-28 | Document v0.2.0 release candidate CLI usage | [Specification](docs/features/2026-08-31-14-28-document-release-candidate-usage.md) | jibbajabber |
 | 2026-08-29-21-02 | Create Semaphore task templates | [Specification](docs/features/2026-08-29-21-02-create-task-templates.md) | whose-footprints-are-these |
 | 2026-08-29-11-28 | Discover and filter Semaphore task history | [Specification](docs/features/2026-08-29-11-28-task-discovery.md) | whose-footprints-are-these |
-| 2026-08-28-19-59 | Trigger Semaphore tasks by project and template name | [Specification](docs/features/2026-08-28-19-59-trigger-task-by-name.md) | whose-footprints-are-these |
 
 See [all feature specifications](docs/features/README.md).
 

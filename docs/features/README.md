@@ -12,6 +12,7 @@ sources: []
 
 | Date | Purpose | Spec | Author |
 | --- | --- | --- | --- |
+| 2026-09-19-15-24 | Add direct CLI attribute options for Semaphore template surveys | [Specification](2026-09-19-15-24-template-cli-attribute-options.md) | whose-footprints-are-these |
 | 2026-09-08-20-18 | Add inventory create, copy, and update commands | [Specification](2026-09-08-20-18-inventory-resource-commands.md) | whose-footprints-are-these |
 | 2026-09-06-18-47 | Add template update and project resource discovery commands | [Specification](2026-09-06-18-47-template-inventory-access-key-resources.md) | whose-footprints-are-these |
 | 2026-09-06-17-32 | Add Semaphore repository resource commands | [Specification](2026-09-06-17-32-repository-resource-commands.md) | whose-footprints-are-these |
