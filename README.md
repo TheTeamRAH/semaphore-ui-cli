@@ -44,7 +44,7 @@ Check the installed version:
 
 ```console
 $ semaphore-ui --version
-semaphore-ui 1.3.0
+semaphore-ui 1.4.0
 ```
 
 List projects and inspect one project:
@@ -143,9 +143,9 @@ semaphore-ui template create \
   --git-branch main
 ```
 
-Add survey variables and vaults directly with repeatable JSON-object options.
-The `vault_key` is the exact name of an existing project access key, not a
-credential value:
+Add survey variables directly with repeatable CLI options. The variable title
+defaults to its name when omitted; metadata can be supplied with the matching
+`--survey-*` option:
 
 ```bash
 semaphore-ui template create \
@@ -154,58 +154,42 @@ semaphore-ui template create \
   --repository configuration-management \
   --inventory homelab \
   --playbook deploy.yml \
-  --survey-var '{"name":"target","title":"Target","type":"","default_value":"web-01"}' \
-  --vault '{"name":"production","type":"password","vault_key":"Production vault password"}'
+  --survey-var target=web-01 \
+  --survey-title target=Target \
+  --survey-required target
 ```
 
-For reproducible advanced requests, `--file` accepts the same JSON object.
-Do not put API tokens, SSH keys, vault passwords, vault scripts, or secret
-survey values in that file:
-
-```json
-{
-  "name": "show-firewall-interface",
-  "repository": "configuration-management",
-  "inventory": "homelab",
-  "environment": "default",
-  "playbook": "site.yml",
-  "git_branch": "main",
-  "type": "",
-  "survey_vars": [
-    {"name": "target", "title": "Target", "type": "", "required": true, "default_value": "web-01"}
-  ],
-  "vaults": [
-    {"name": "production", "type": "password", "vault_key": "Production vault password"}
-  ],
-  "task_params": {"params": {"dry_run": true, "tags": ["firewall"]}}
-}
-```
+The same options update an existing template without curl:
 
 ```bash
-semaphore-ui template create --project configuration_management --file template.json --json
+semaphore-ui template update \
+  --project configuration_management \
+  --template fb_deploy_compose \
+  --survey-var inbox_repo_version=main \
+  --survey-title inbox_repo_version="Inbox repository version" \
+  --survey-description inbox_repo_version="Git branch, tag, or commit" \
+  --json
 ```
 
-The request file accepts `name`, `repository`, `inventory`, `environment`, and
-`playbook` (all required); plus `description`, `git_branch`, `type` (`""`,
-`build`, or `deploy`), `arguments`, `survey_vars`, `vaults`, `task_params`, and
-`view`. The direct `--survey-var JSON` and `--vault JSON` options may be
-repeated and cannot be combined with `--file`. Survey defaults may be strings,
-or string arrays for `select` variables; they cannot be used with `secret`
-variables. Template creation currently supports Ansible only and always sends
-`app: "ansible"`; an `app` value cannot be supplied in the request file or on
-the command line. A vault's optional `vault_key` is converted to its ID and is
-never credential input. The `--json` result contains the created template and only safe effective
-configuration; it deliberately omits arguments, survey values/defaults, vault
-scripts, and task parameters. Template creation persists configuration but does
-not execute a playbook. The token must have permission to create templates and
-read the referenced project resources; authorization failures return exit status
-`2`. Before creating a template, the CLI checks the target instance's Swagger
-schema at `/api/swagger` when that endpoint exists. A missing Swagger endpoint
-is supported for older Semaphore instances; malformed or incompatible schemas
-and other preflight errors return exit status `2` and prevent the POST.
+The legacy inline JSON `--survey-var` and `--vault` forms remain accepted for
+backward compatibility. New workflows should use the direct survey options.
+The `--file` mode remains an advanced compatibility escape hatch and is not
+required for ordinary survey configuration. Secret survey values, vault
+passwords, scripts, tokens, and private keys are never accepted or printed.
+
+Template creation persists configuration but does not execute a playbook. The
+legacy `--file` mode remains available for compatibility with advanced payloads,
+but direct CLI options are the supported workflow for survey variables. The
+`--json` result contains the created template and only safe effective
+configuration; it omits arguments, survey values/defaults, vault scripts, and
+task parameters. A vault's optional `vault_key` is the exact name of an existing
+project access key, never credential input. Authorization failures return exit
+status `2`. Before creating a template, the CLI checks the target instance's
+Swagger schema at `/api/swagger` when that endpoint exists. A missing Swagger
+endpoint is supported for older Semaphore instances; malformed or incompatible
+schemas and other preflight errors return exit status `2` and prevent the POST.
 Semaphore's known `survey_vars[].default_value` and `select` extensions remain
-accepted when an otherwise compatible instance Swagger document has not yet
-listed them.
+accepted when an otherwise compatible Swagger document has not yet listed them.
 
 Copy an existing template without running it. The source is resolved by exact
 name, the destination must be new, and supported non-secret configuration is
@@ -288,6 +272,7 @@ Use `--json` on commands that return structured data for CI and agent integratio
 
 | Date | Purpose | Spec | Author |
 | --- | --- | --- | --- |
+| 2026-09-19-15-24 | Add direct CLI attribute options for Semaphore template surveys | [Specification](docs/features/2026-09-19-15-24-template-cli-attribute-options.md) | whose-footprints-are-these |
 | 2026-09-08-20-18 | Add inventory create, copy, and update commands | [Specification](docs/features/2026-09-08-20-18-inventory-resource-commands.md) | whose-footprints-are-these |
 | 2026-09-06-18-47 | Add template update and project resource discovery commands | [Specification](docs/features/2026-09-06-18-47-template-inventory-access-key-resources.md) | whose-footprints-are-these |
 | 2026-09-06-17-32 | Add Semaphore repository resource commands | [Specification](docs/features/2026-09-06-17-32-repository-resource-commands.md) | whose-footprints-are-these |
@@ -297,7 +282,6 @@ Use `--json` on commands that return structured data for CI and agent integratio
 | 2026-08-31-14-28 | Document v0.2.0 release candidate CLI usage | [Specification](docs/features/2026-08-31-14-28-document-release-candidate-usage.md) | jibbajabber |
 | 2026-08-29-21-02 | Create Semaphore task templates | [Specification](docs/features/2026-08-29-21-02-create-task-templates.md) | whose-footprints-are-these |
 | 2026-08-29-11-28 | Discover and filter Semaphore task history | [Specification](docs/features/2026-08-29-11-28-task-discovery.md) | whose-footprints-are-these |
-| 2026-08-28-19-59 | Trigger Semaphore tasks by project and template name | [Specification](docs/features/2026-08-28-19-59-trigger-task-by-name.md) | whose-footprints-are-these |
 
 See [all feature specifications](docs/features/README.md).
 
