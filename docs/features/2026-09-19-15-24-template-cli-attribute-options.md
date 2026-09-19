@@ -309,5 +309,6 @@ Live validation of `fb_deploy_compose` found that the existing
 `task_params.allow_override_tags` field was rejected by `template update`, even
 though it is part of the persisted template contract. The validator now accepts
 and type-checks this boolean field, preserves it during full-object updates, and
-covers it with a regression test. The live template update and FB task are
-rerun after publication.
+covers it with a regression test. The live template update succeeded and the
+persisted configuration was read back with the Inbox survey and tags override
+intact. FB task execution was not required for this CLI-gap closeout.
