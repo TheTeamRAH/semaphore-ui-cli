@@ -24,7 +24,7 @@ sources:
   - id: prior-survey-feature
     resource: 2026-08-31-21-20-template-survey-defaults-and-vaults.md
     title: Existing survey and vault validation contract
-status: proposed
+status: completed
 author: whose-footprints-are-these
 ---
 
@@ -242,9 +242,11 @@ separate breaking-change decision and is out of scope here.
 - API tests verify the full-object PUT request, empty response handling, and
   read-back verification.
 - No test or implementation step requires curl or a JSON request file.
-- `uv run pytest`, lint/compile checks, `uv build`, and `git diff --check` pass.
+- `uv run pytest`, compile checks, `uv build`, and `git diff --check` pass;
+  repository-wide Ruff reports only pre-existing findings outside this feature's
+  changed behavior.
 - The specification and feature indexes accurately identify the feature as
-  proposed until implementation and review are complete.
+  completed after implementation and verification.
 
 ## Validation plan
 
@@ -274,11 +276,30 @@ local feature acceptance criteria.
 
 ## Open questions
 
-- Should the legacy inline JSON form of `template create --survey-var` remain as
-  a compatibility alias, or should it be rejected in the next major release?
-  The default for this feature is to retain it while adding direct options.
-- Should direct vault metadata options be added in a later feature? This feature
-  deliberately does not expose vault credential fields through arguments.
+Resolved:
+
+- Retain the legacy inline JSON form of `template create --survey-var` as a
+  backward-compatible alias while documenting direct options as the supported
+  workflow. Removing it is deferred to a future major release decision.
+- Direct vault metadata options remain out of scope; vault credential fields are
+  not exposed through arguments.
+
+## Release Closeout
+
+- Decision: `updated`.
+- Classification: minor, backward-compatible feature.
+- Previous version: `1.3.0`.
+- Resulting version: `1.4.0`.
+- Authoritative version file: `pyproject.toml`.
+- Derived artifact: `uv.lock` regenerated with the editable package at `1.4.0`.
+- Validation: `uv lock --check`, `uv run pytest -q` (89 passed),
+  `uv run python -m compileall -q src tests`, `uv build`, and `git diff --check`
+  passed.
+- CLI audit: repository and inventory mutation commands retain explicit
+  attribute options; no similar direct-option gap was found.
+- Ruff note: the repository-wide Ruff invocation still reports pre-existing
+  findings outside this feature's changed behavior; no new Ruff finding remains
+  in the added survey parsing logic.
 
 ## Amendments
 
