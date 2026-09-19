@@ -11,6 +11,7 @@ class ResourceClient:
             "inventory_id": 1, "environment_id": 0, "playbook": "playbooks/hello_world.yml",
             "git_branch": "master", "type": "", "app": "ansible",
             "allow_override_branch_in_task": True,
+            "task_params": {"allow_override_tags": True},
         }]
         self.inventories = [{
             "id": 1, "project_id": 1, "name": "configuration_management",
@@ -86,6 +87,7 @@ def test_template_update_changes_only_branch_and_reads_back(monkeypatch, capsys)
     assert payload["repository_id"] == 2
     assert payload["inventory_id"] == 1
     assert payload["allow_override_branch_in_task"] is True
+    assert payload["task_params"] == {"allow_override_tags": True}
     assert json.loads(capsys.readouterr().out)["configuration"]["git_branch"] == "feature_branch_cm"
 
 

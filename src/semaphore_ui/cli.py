@@ -730,12 +730,22 @@ def _validate_task_params(value: Any) -> dict[str, Any]:
         supported task-parameter object. ``dry_run`` must be boolean, while
         ``tags``, ``limit``, and ``skip_tags`` must be lists of strings.
     """
-    allowed_fields = {"environment", "git_branch", "message", "arguments", "params"}
+    allowed_fields = {
+        "environment",
+        "git_branch",
+        "message",
+        "arguments",
+        "params",
+        "allow_override_tags",
+    }
     if not isinstance(value, dict) or set(value) - allowed_fields:
         raise ValueError("template task_params has unsupported fields")
     for field in ("environment", "git_branch", "message", "arguments"):
         if field in value and not isinstance(value[field], str):
             raise ValueError(f"template task_params.{field} must be a string")
+    boolean_fields = {"allow_override_tags"}
+    if _contains_non_boolean(value, boolean_fields):
+        raise ValueError("template task_params boolean values must be booleans")
     if "params" in value:
         params = value["params"]
         boolean_fields = {"debug", "dry_run", "diff", "skip_galaxy_install", "plan", "destroy", "auto_approve", "upgrade"}

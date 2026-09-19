@@ -303,4 +303,11 @@ Resolved:
 
 ## Amendments
 
-None.
+### 2026-09-19 — Preserve deployed task parameters during template updates
+
+Live validation of `fb_deploy_compose` found that the existing
+`task_params.allow_override_tags` field was rejected by `template update`, even
+though it is part of the persisted template contract. The validator now accepts
+and type-checks this boolean field, preserves it during full-object updates, and
+covers it with a regression test. The live template update and FB task are
+rerun after publication.
